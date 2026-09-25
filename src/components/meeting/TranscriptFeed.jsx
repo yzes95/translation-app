@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Volume2, Copy, Check, MessageSquare, Sparkles, User } from 'lucide-react';
+import { Volume2, Copy, Check, MessageSquare, User, Sparkles } from 'lucide-react';
 import { isRTL, getLanguageByCode } from '../../constants/languages';
 
 export const TranscriptFeed = ({
@@ -68,10 +68,10 @@ export const TranscriptFeed = ({
         return (
           <div
             key={entry.id}
-            className="group relative bg-slate-900/90 border border-slate-800/90 hover:border-slate-700/80 rounded-xl p-4 transition-all shadow-sm"
+            className="group relative bg-slate-900/90 border border-slate-800/90 hover:border-slate-700/80 rounded-2xl p-4 transition-all shadow-sm"
           >
             {/* Header: Speaker & Timestamp */}
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-2.5">
               <div className="flex items-center space-x-2">
                 <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 text-xs">
                   <User className="w-3.5 h-3.5" />
@@ -107,23 +107,41 @@ export const TranscriptFeed = ({
               </div>
             </div>
 
-            {/* Original Spoken Text */}
-            <div className={`text-xs text-slate-400 mb-2 ${isSourceRTL ? 'rtl-text' : 'ltr-text'}`}>
-              <span className="text-[10px] uppercase font-bold text-slate-500 mr-2 inline-block">
-                Original ({sourceLangInfo.code}):
-              </span>
-              <span>{entry.text}</span>
+            {/* Original Spoken Text Box */}
+            <div className={`p-2.5 rounded-xl bg-slate-950/50 border border-slate-800/60 mb-2.5 ${isSourceRTL ? 'rtl-text' : 'ltr-text'}`}>
+              <div className="flex items-center space-x-1.5 text-[10px] uppercase font-bold text-slate-400 mb-1">
+                <span>{sourceLangInfo.flag}</span>
+                <span>Original ({sourceLangInfo.name}):</span>
+              </div>
+              <div className="text-xs sm:text-sm text-slate-200 leading-relaxed">
+                {entry.text}
+              </div>
             </div>
 
-            {/* Live Translated Output */}
+            {/* Live Translated Output Box */}
             <div
-              className={`text-sm sm:text-base font-medium text-slate-100 p-2.5 rounded-lg bg-slate-950/50 border border-slate-800/60 ${
-                isTargetRTL ? 'rtl-text text-indigo-200' : 'ltr-text text-indigo-100'
+              className={`p-3 rounded-xl bg-indigo-950/20 border border-indigo-500/25 ${
+                isTargetRTL ? 'rtl-text' : 'ltr-text'
               }`}
             >
-              {entry.translatedText || (
-                <span className="text-xs text-slate-500 italic">Translating...</span>
-              )}
+              <div className="flex items-center space-x-1.5 text-[10px] uppercase font-bold text-indigo-400 mb-1">
+                <span>{targetLangInfo.flag}</span>
+                <span>Translation ({targetLangInfo.name}):</span>
+              </div>
+              <div
+                className={`text-sm sm:text-base font-medium ${
+                  isTargetRTL ? 'text-indigo-200' : 'text-indigo-100'
+                }`}
+              >
+                {entry.translatedText ? (
+                  entry.translatedText
+                ) : (
+                  <span className="flex items-center space-x-2 text-xs text-indigo-400/80 italic">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping inline-block"></span>
+                    <span>Translating live...</span>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         );
@@ -131,24 +149,25 @@ export const TranscriptFeed = ({
 
       {/* Live Interim Streaming Bubble (while actively speaking) */}
       {interimTranscript && (
-        <div className="bg-slate-900/70 border border-blue-500/40 rounded-xl p-4 animate-pulse">
+        <div className="bg-slate-900/80 border border-blue-500/40 rounded-2xl p-4 animate-pulse">
           <div className="flex items-center space-x-2 mb-2 text-xs text-blue-400 font-semibold">
             <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
-            <span>Live Speaking...</span>
+            <span>Live Speaking in progress...</span>
           </div>
 
-          <p className={`text-xs text-slate-400 mb-1 ${isSourceRTL ? 'rtl-text' : 'ltr-text'}`}>
+          <p className={`text-xs text-slate-300 mb-2 ${isSourceRTL ? 'rtl-text' : 'ltr-text'}`}>
             {interimTranscript}
           </p>
 
           {interimTranslation && (
-            <p
-              className={`text-sm font-medium text-indigo-300 ${
+            <div
+              className={`text-sm font-medium text-indigo-300 pt-2 border-t border-blue-500/20 ${
                 isTargetRTL ? 'rtl-text' : 'ltr-text'
               }`}
             >
+              <span className="text-[10px] text-indigo-400/70 block uppercase font-bold mb-0.5">Preview:</span>
               {interimTranslation}
-            </p>
+            </div>
           )}
         </div>
       )}

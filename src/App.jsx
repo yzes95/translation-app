@@ -51,6 +51,28 @@ export function App() {
   const timerRef = useRef(null);
   const currentMeetingIdRef = useRef(null);
 
+  // Maintain refs for live callback access without re-binding
+  const sourceLangRef = useRef(sourceLang);
+  const targetLangRef = useRef(targetLang);
+  const settingsRef = useRef(settings);
+  const entriesRef = useRef(entries);
+
+  useEffect(() => {
+    sourceLangRef.current = sourceLang;
+  }, [sourceLang]);
+
+  useEffect(() => {
+    targetLangRef.current = targetLang;
+  }, [targetLang]);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
+
   // Load meeting history on mount
   useEffect(() => {
     loadMeetings();
@@ -61,7 +83,7 @@ export function App() {
     setPastMeetings(list);
   };
 
-  // Setup SpeechService callbacks
+  // Setup SpeechService callbacks once on mount
   useEffect(() => {
     speechService.onStatusChange = (status) => {
       setIsListening(status === 'listening');
@@ -77,31 +99,46 @@ export function App() {
 
     speechService.onResult = async ({ transcript, isFinal }) => {
       if (!transcript || !transcript.trim()) return;
+      const currentSrc = sourceLangRef.current;
+      const currentTgt = targetLangRef.current;
 
       if (!isFinal) {
         setInterimTranscript(transcript);
         // Fast speculative translation for interim text
-        const specTranslation = await translationEngine.translate(transcript, sourceLang, targetLang);
-        setInterimTranslation(specTranslation);
+        translationEngine.translate(transcript, currentSrc, currentTgt).then((specTranslation) => {
+          setInterimTranslation(specTranslation);
+        });
       } else {
         setInterimTranscript('');
         setInterimTranslation('');
 
-        // Final translation
-        const translatedText = await translationEngine.translate(transcript, sourceLang, targetLang);
+        const entryId = `entry-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+        const speakerNum = (entriesRef.current.length % 2) + 1;
+        const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-        const newEntry = {
-          id: `entry-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          speaker: `Speaker ${entries.length % 2 === 0 ? '1' : '2'}`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        // Add entry immediately so user sees their transcription without waiting
+        const initialEntry = {
+          id: entryId,
+          speaker: `Speaker ${speakerNum}`,
+          timestamp: timeNow,
           text: transcript,
-          translatedText: translatedText
+          translatedText: ''
         };
 
-        setEntries((prev) => [...prev, newEntry]);
+        setEntries((prev) => [...prev, initialEntry]);
 
-        if (settings.autoTTS && translatedText) {
-          ttsService.speak(translatedText, targetLang, { rate: settings.ttsRate });
+        // Translate in background and update entry
+        try {
+          const translatedText = await translationEngine.translate(transcript, currentSrc, currentTgt);
+          setEntries((prev) =>
+            prev.map((item) => (item.id === entryId ? { ...item, translatedText: translatedText } : item))
+          );
+
+          if (settingsRef.current.autoTTS && translatedText) {
+            ttsService.speak(translatedText, currentTgt, { rate: settingsRef.current.ttsRate });
+          }
+        } catch (err) {
+          console.error('Translation error:', err);
         }
       }
     };
@@ -109,7 +146,7 @@ export function App() {
     return () => {
       speechService.stop();
     };
-  }, [sourceLang, targetLang, settings, entries.length]);
+  }, []); // Run ONLY once on mount!
 
   // Meeting duration timer
   useEffect(() => {
@@ -138,6 +175,13 @@ export function App() {
     // Auto produce summary if enabled and entries exist
     if (generateSummary && entries.length > 0) {
       handleProduceSummary();
+    }
+  };
+
+  const handleSourceChange = (newLang) => {
+    setSourceLang(newLang);
+    if (isListening) {
+      speechService.changeLanguage(newLang);
     }
   };
 
@@ -271,12 +315,12 @@ export function App() {
         <LanguageSelector
           sourceLang={sourceLang}
           targetLang={targetLang}
-          onSourceChange={setSourceLang}
+          onSourceChange={handleSourceChange}
           onTargetChange={setTargetLang}
           onSwapLanguages={handleSwapLanguages}
           generateSummary={generateSummary}
           onToggleSummary={setGenerateSummary}
-          disabled={isListening}
+          disabled={false}
         />
 
         {/* Live Audio & Meeting Control Bar */}
