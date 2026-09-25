@@ -19,8 +19,8 @@ export const SUPPORTED_LANGUAGES = [
     name: 'Arabic',
     nativeName: 'العربية',
     flag: '🇸🇦',
-    speechCode: 'ar-SA',
-    speechCodesFallback: ['ar-SA', 'ar-EG', 'ar-AE'],
+    speechCode: 'ar-EG',
+    speechCodesFallback: ['ar-EG', 'ar-SA', 'ar-AE'],
     rtl: true,
     samplePhrases: [
       'صباح الخير جميعاً، دعونا نبدأ بمراجعة بنود جدول الأعمال.',

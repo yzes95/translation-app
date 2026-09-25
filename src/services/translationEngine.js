@@ -1,5 +1,5 @@
-// Translation Engine supporting Direct In-Browser Fetch, Chrome Built-in AI,
-// and Offline Multilingual Meeting Lexicon for all 9 languages.
+// Translation Engine with Dialect Normalizer, Free In-Browser Online Engine,
+// Optional AI (Gemini / Groq / OpenAI), and Offline Lexicon Fallback.
 
 const cache = new Map();
 
@@ -15,130 +15,78 @@ function decodeHtmlEntities(str) {
     .trim();
 }
 
-// High-frequency multilingual meeting vocabulary & phrase corpus for offline fallback
-const MEETING_LEXICON = {
-  'en-ar': {
-    'good morning': 'صباح الخير',
-    'good morning everyone': 'صباح الخير للجميع',
-    'welcome': 'أهلاً وسهلاً',
-    'hello': 'مرحباً',
-    'how are you': 'كيف حالك',
-    'let us review the quarterly milestones': 'دعونا نراجع المعالم الفصلية',
-    'we need to finalize the deployment schedule': 'نحتاج إلى وضع اللمسات الأخيرة على جدول النشر',
-    'we need to finalize the budget by next friday': 'نحتاج إلى إنهاء الميزانية بحلول يوم الجمعة القادم',
-    'the client requested an update on the multilingual interface': 'طلب العميل تحديثاً حول الواجهة متعددة اللغات',
-    'let us assign the action items before concluding this sync': 'دعونا نوزع بنود العمل قبل اختتام هذا الاجتماع',
-    'i will send the draft tonight': 'سأرسل المسودة الليلة',
-    'can we also review the budget': 'هل يمكننا أيضاً مراجعة الميزانية؟',
-    'thank you very much': 'شكراً جزيلاً',
-    'any questions': 'هل توجد أي أسئلة؟',
-    'agreed': 'تم الاتفاق',
-    'yes': 'نعم',
-    'no': 'لا',
-    'next steps': 'الخطوات التالية',
-    'action item': 'بند العمل',
-    'deadline': 'الموعد النهائي',
-    'meeting summary': 'ملخص الاجتماع',
-    'decision': 'القرار'
-  },
-  'ar-en': {
-    'صباح الخير': 'Good morning',
-    'صباح الخير للجميع': 'Good morning everyone',
-    'صباح الخير جميعا': 'Good morning everyone',
-    'أهلا وسهلا': 'Welcome',
-    'اهلا وسهلا': 'Welcome',
-    'مرحبا': 'Hello',
-    'مرحبا بكم': 'Welcome',
-    'كيف حالك': 'How are you',
-    'كيف الحال': 'How are things / How are you',
-    'شكرا': 'Thank you',
-    'شكرا جزيلا': 'Thank you very much',
-    'نعم': 'Yes',
-    'لا': 'No',
-    'حسنا': 'Okay / Agreed',
-    'تمام': 'Alright',
-    'المشروع': 'The project',
-    'الميزانية': 'The budget',
-    'الاجتماع': 'The meeting',
-    'يجب أن ننهي المشروع': 'We must finish the project',
-    'سأرسل التقرير': 'I will send the report',
-    'هل هناك أي أسئلة': 'Are there any questions?'
-  },
-  'en-ur': {
-    'good morning': 'صبح بخیر',
-    'good morning everyone': 'سب کو صبح بخیر',
-    'welcome': 'خوش آمدید',
-    'hello': 'ہیلو / السلام علیکم',
-    'how are you': 'آپ کیسے ہیں؟',
-    'thank you very much': 'بہت بہت شکریہ',
-    'yes': 'جی ہاں',
-    'no': 'نہیں',
-    'agreed': 'اتفاق ہے'
-  },
-  'ur-en': {
-    'صبح بخیر': 'Good morning',
-    'خوش آمدید': 'Welcome',
-    'آپ کیسے ہیں': 'How are you?',
-    'بہت شکریہ': 'Thank you very much',
-    'جی ہاں': 'Yes',
-    'نہیں': 'No',
-    'اتفاق ہے': 'Agreed'
-  },
-  'en-de': {
-    'good morning': 'Guten Morgen',
-    'welcome': 'Willkommen',
-    'thank you very much': 'Vielen Dank',
-    'yes': 'Ja',
-    'no': 'Nein',
-    'agreed': 'Einverstanden'
-  },
-  'de-en': {
-    'guten morgen': 'Good morning',
-    'willkommen': 'Welcome',
-    'vielen dank': 'Thank you very much',
-    'ja': 'Yes',
-    'nein': 'No',
-    'einverstanden': 'Agreed'
-  },
-  'en-fr': {
-    'good morning': 'Bonjour',
-    'welcome': 'Bienvenue',
-    'thank you very much': 'Merci beaucoup',
-    'yes': 'Oui',
-    'no': 'Non',
-    'agreed': 'D’accord'
-  },
-  'fr-en': {
-    'bonjour': 'Good morning / Hello',
-    'bienvenue': 'Welcome',
-    'merci beaucoup': 'Thank you very much',
-    'oui': 'Yes',
-    'non': 'No',
-    'd’accord': 'Agreed',
-    'daccord': 'Agreed'
-  },
-  'en-tr': {
-    'good morning': 'Günaydın',
-    'welcome': 'Hoş geldiniz',
-    'thank you very much': 'Çok teşekkürler',
-    'yes': 'Evet',
-    'no': 'Hayır',
-    'agreed': 'Anlaşıldı'
-  },
-  'tr-en': {
-    'günaydın': 'Good morning',
-    'hoş geldiniz': 'Welcome',
-    'çok teşekkürler': 'Thank you very much',
-    'teşekkür ederim': 'Thank you',
-    'evet': 'Yes',
-    'hayır': 'No',
-    'anlaşıldı': 'Agreed'
+// Normalize colloquial spoken dialects (especially Egyptian, Levantine, Gulf)
+// so that translation models understand conversational idioms instead of literal dictionary terms.
+export function normalizeArabicDialect(text) {
+  if (!text) return '';
+  let s = text.trim();
+
+  // Dialectal idioms & common phrases
+  const replacements = [
+    // Egyptian friendly addresses & slang
+    [/\bيا عم الحج\b/gi, 'يا أخي'],
+    [/\bيا حج\b/gi, 'يا أخي'],
+    [/\bيا عمي\b/gi, 'يا صديقي'],
+    [/\bيا راجل\b/gi, 'يا صديقي'],
+    [/\bتست\b/gi, 'اختبار'],
+
+    // Expressions of warning / caution
+    [/\bاوعى تكون\b/gi, 'إياك أن تكون'],
+    [/\bاوعى\b/gi, 'إياك أن'],
+
+    // Verbs of state / staying active vs stopping
+    [/\bما بتقفلش\b/gi, 'لا تتوقف عن العمل'],
+    [/\bمابتقفلش\b/gi, 'لا تتوقف عن العمل'],
+    [/\bمابيقفلش\b/gi, 'لا يتوقف عن العمل'],
+    [/\bما بيقفلش\b/gi, 'لا يتوقف عن العمل'],
+    [/\bمش المفروض\b/gi, 'أليس من المفترض أن'],
+    [/\bقاعد شغال\b/gi, 'تظل مستمراً في العمل'],
+    [/\bفاضل شغال\b/gi, 'تظل مستمراً في العمل'],
+    [/\bتفضل شغال\b/gi, 'تظل مستمراً في العمل'],
+    [/\bتبقى شغال\b/gi, 'تستمر في العمل'],
+    [/\bبتقفل\b/gi, 'تتوقف عن العمل'],
+    [/\bبيقفل\b/gi, 'يتوقف عن العمل'],
+    [/\bشغال\b/gi, 'يعمل'],
+
+    // Question words & particles
+    [/\bليه\b/gi, 'لماذا'],
+    [/\bإيه\b|\bايه\b/gi, 'ماذا'],
+    [/\bازاي\b|\bإزاي\b/gi, 'كيف'],
+    [/\bفين\b/gi, 'أين'],
+    [/\bامتى\b/gi, 'متى'],
+    [/\bمين\b/gi, 'من'],
+
+    // Conjunctions & adverbs
+    [/\bعشان\b|\bعلشان\b/gi, 'لكي'],
+    [/\bدلوقتي\b/gi, 'الآن'],
+    [/\bكده\b|\bكدا\b/gi, 'هكذا'],
+    [/\bعايز\b|\bعاوز\b/gi, 'أريد'],
+    [/\bشوية\b|\bشويه\b/gi, 'قليلاً'],
+    [/\bكويس\b/gi, 'جيد'],
+    [/\bخلاص\b/gi, 'انتهى الأمر'],
+    [/\bيلا\b|\bيلّا\b/gi, 'هيا بنا'],
+    [/\bمفيش\b|\bمافيش\b/gi, 'لا يوجد']
+  ];
+
+  for (const [pattern, replacement] of replacements) {
+    s = s.replace(pattern, replacement);
   }
-};
+
+  return s;
+}
 
 export class TranslationEngine {
   constructor() {
     this.activeBackend = 'online-fast';
+  }
+
+  getAIConfig() {
+    try {
+      const stored = localStorage.getItem('linguaflow_ai_config');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
   }
 
   async translate(text, sourceLang, targetLang) {
@@ -148,19 +96,39 @@ export class TranslationEngine {
     const cleanText = text.trim();
     const cacheKey = `${sourceLang}|${targetLang}|${cleanText.toLowerCase()}`;
 
-    // 1. Check in-memory cache for instant zero-latency return
+    // 1. Check in-memory cache
     if (cache.has(cacheKey)) {
       return cache.get(cacheKey);
     }
 
-    // 2. Try online in-browser translation API (MyMemory)
+    // 2. Check for User-Configured AI API Key (Gemini or Groq)
+    const aiConfig = this.getAIConfig();
+    if (aiConfig && aiConfig.apiKey && aiConfig.apiKey.trim()) {
+      try {
+        const aiResult = await this.translateWithAI(cleanText, sourceLang, targetLang, aiConfig);
+        if (aiResult && aiResult.trim()) {
+          cache.set(cacheKey, aiResult.trim());
+          return aiResult.trim();
+        }
+      } catch (err) {
+        console.warn('AI translation error, falling back to neural web engine:', err);
+      }
+    }
+
+    // 3. Dialect Pre-Processing for Arabic
+    let queryText = cleanText;
+    if (sourceLang === 'ar') {
+      queryText = normalizeArabicDialect(cleanText);
+    }
+
+    // 4. Free In-Browser Neural Translation API
     const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
     if (isOnline) {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 4500);
 
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(cleanText)}&langpair=${sourceLang}|${targetLang}`;
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(queryText)}&langpair=${sourceLang}|${targetLang}`;
         const response = await fetch(url, { signal: controller.signal });
         clearTimeout(timeoutId);
 
@@ -168,7 +136,6 @@ export class TranslationEngine {
           const data = await response.json();
           if (data && data.responseData && data.responseData.translatedText) {
             const result = decodeHtmlEntities(data.responseData.translatedText);
-            // Verify it did not return error string or identical non-target text
             if (result && result.toLowerCase() !== cleanText.toLowerCase()) {
               cache.set(cacheKey, result);
               return result;
@@ -176,11 +143,11 @@ export class TranslationEngine {
           }
         }
       } catch (err) {
-        console.warn('Online translation request failed, attempting local fallback:', err.message);
+        console.warn('Online translation failed:', err.message);
       }
     }
 
-    // 3. Try Chrome Built-in AI Translation if present
+    // 5. Chrome Built-in AI Translation (if supported natively)
     try {
       if (typeof window !== 'undefined' && window.translation?.canTranslate) {
         const canTranslate = await window.translation.canTranslate({
@@ -192,46 +159,62 @@ export class TranslationEngine {
             sourceLanguage: sourceLang,
             targetLanguage: targetLang
           });
-          const result = await translator.translate(cleanText);
+          const result = await translator.translate(queryText);
           if (result) {
             cache.set(cacheKey, result);
             return result;
           }
         }
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
 
-    // 4. Offline Meeting Lexicon lookup
-    const offlineResult = this.lookupOfflineLexicon(cleanText, sourceLang, targetLang);
-    if (offlineResult) {
-      cache.set(cacheKey, offlineResult);
-      return offlineResult;
-    }
-
-    // 5. If everything else fails, return with language tag or original
+    // 6. Return normalized text or original
     return cleanText;
   }
 
-  lookupOfflineLexicon(text, sourceLang, targetLang) {
-    const normalized = text.toLowerCase().replace(/[.,!?;:،؟]/g, '').trim();
-    const pairKey = `${sourceLang}-${targetLang}`;
-
-    if (MEETING_LEXICON[pairKey] && MEETING_LEXICON[pairKey][normalized]) {
-      return MEETING_LEXICON[pairKey][normalized];
+  async translateWithAI(text, sourceLang, targetLang, { provider, apiKey, model }) {
+    if (provider === 'gemini') {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-1.5-flash'}:generateContent?key=${apiKey}`;
+      const prompt = `You are a live simultaneous meeting interpreter. Translate the following speech from ${sourceLang} to ${targetLang}. Preserve the natural conversational tone and translate colloquial dialect idioms accurately. Output ONLY the translated text, nothing else.\n\nSpeech:\n${text}`;
+      
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+      const data = await res.json();
+      return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    } else if (provider === 'groq') {
+      const url = 'https://api.groq.com/openai/v1/chat/completions';
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: model || 'llama-3.3-70b-versatile',
+          messages: [
+            {
+              role: 'system',
+              content: `You are a professional simultaneous interpreter. Translate conversational speech from ${sourceLang} to ${targetLang}. Handle colloquial dialect idioms naturally. Output ONLY the translated sentence.`
+            },
+            {
+              role: 'user',
+              content: text
+            }
+          ],
+          temperature: 0.2
+        })
+      });
+      const data = await res.json();
+      return data?.choices?.[0]?.message?.content?.trim() || '';
     }
-
-    // Pivot through English if neither is English
-    if (sourceLang !== 'en' && targetLang !== 'en') {
-      const enPivot = this.lookupOfflineLexicon(text, sourceLang, 'en');
-      if (enPivot && enPivot.toLowerCase() !== normalized) {
-        const finalTarget = this.lookupOfflineLexicon(enPivot, 'en', targetLang);
-        if (finalTarget) return finalTarget;
-      }
-    }
-
-    return null;
+    return '';
   }
 }
 

@@ -10,10 +10,14 @@ class SpeechService {
     this.SpeechRecognition = SpeechRecognition;
     this.recognition = null;
     this.isListening = false;
-    this.userActive = false; // Strictly set to true when user clicks Start, false when user clicks Stop
-    this.currentLanguage = 'en';
+    this.userActive = false; // Strictly controlled by Start and Stop buttons
+    this.currentLanguage = 'ar';
     this.restartTimeout = null;
-    this.retryCount = 0;
+    this.silenceTimer = null;
+
+    // Conversational Accumulator: keeps full sentence intact across natural pauses
+    this.accumulatedSentence = '';
+    this.lastInterim = '';
 
     // Callbacks
     this.onResult = null;
@@ -96,13 +100,13 @@ class SpeechService {
     }
   }
 
-  start(langCode = 'en') {
+  start(langCode = 'ar') {
     if (!this.SpeechRecognition) {
       console.warn('SpeechRecognition is not supported in this browser.');
       if (this.onError) {
         this.onError({
           code: 'not-supported',
-          message: 'Speech recognition is not natively supported in this browser. You can still type or use simulation mode!'
+          message: 'Speech recognition is not natively supported in this browser.'
         });
       }
       return false;
@@ -111,11 +115,16 @@ class SpeechService {
     this.currentLanguage = langCode;
     this.userActive = true;
     this.isListening = true;
-    this.retryCount = 0;
+    this.accumulatedSentence = '';
+    this.lastInterim = '';
 
     if (this.restartTimeout) {
       clearTimeout(this.restartTimeout);
       this.restartTimeout = null;
+    }
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
     }
 
     try {
@@ -136,9 +145,8 @@ class SpeechService {
     try {
       this.recognition.start();
     } catch (e) {
-      // If recognition is already started or restarting, ignore error and retry if needed
       if (e.name !== 'InvalidStateError') {
-        console.warn('Recognition start caught:', e.message);
+        console.warn('SafeStart note:', e.message);
       }
     }
   }
@@ -158,12 +166,11 @@ class SpeechService {
     this.recognition = new this.SpeechRecognition();
     this.recognition.continuous = true;
     this.recognition.interimResults = true;
-    this.recognition.lang = langInfo.speechCode;
+    this.recognition.lang = langInfo.speechCode || 'ar-EG';
     this.recognition.maxAlternatives = 1;
 
     this.recognition.onstart = () => {
       this.isListening = true;
-      this.retryCount = 0;
       if (this.onStatusChange) this.onStatusChange('listening');
     };
 
@@ -180,56 +187,63 @@ class SpeechService {
         }
       }
 
-      if (this.onResult) {
-        if (finalTranscript.trim()) {
-          this.onResult({
-            transcript: finalTranscript.trim(),
-            isFinal: true,
-            confidence: event.results[event.results.length - 1]?.[0]?.confidence || 0.9
-          });
-        } else if (interimTranscript.trim()) {
-          this.onResult({
-            transcript: interimTranscript.trim(),
-            isFinal: false,
-            confidence: 0.7
-          });
-        }
+      if (finalTranscript.trim()) {
+        // Accumulate final chunk into the current conversational thought
+        this.accumulatedSentence = (this.accumulatedSentence + ' ' + finalTranscript.trim()).trim();
+      }
+
+      this.lastInterim = interimTranscript.trim();
+      const currentFullText = (this.accumulatedSentence + ' ' + this.lastInterim).trim();
+
+      // Show real-time interim speech bubble
+      if (this.onResult && currentFullText) {
+        this.onResult({
+          transcript: currentFullText,
+          isFinal: false,
+          confidence: 0.8
+        });
+      }
+
+      // Reset sentence pause debouncer (1.4 seconds of silence before finalizing sentence)
+      if (this.silenceTimer) clearTimeout(this.silenceTimer);
+
+      if (this.accumulatedSentence) {
+        this.silenceTimer = setTimeout(() => {
+          this.commitSentence();
+        }, 1400);
       }
     };
 
     this.recognition.onerror = (event) => {
-      // 'no-speech' or 'aborted' are normal pauses in meeting rooms; DO NOT stop listening!
+      // Natural silence or pauses in meetings: keep listening without aborting!
       if (event.error === 'no-speech' || event.error === 'aborted') {
         return;
       }
-      console.warn('SpeechRecognition event error:', event.error);
+      console.warn('SpeechRecognition error:', event.error);
       if (event.error === 'not-allowed') {
         this.userActive = false;
         this.isListening = false;
         if (this.onStatusChange) this.onStatusChange('idle');
         if (this.onError) {
-          this.onError({ code: event.error, message: 'Microphone permission denied.' });
+          this.onError({ code: event.error, message: 'Microphone permission was denied.' });
         }
       }
     };
 
     this.recognition.onend = () => {
-      // If user still wants listening, ALWAYS restart automatically!
+      // If user still wants listening, seamlessly reconnect without losing words
       if (this.userActive) {
         if (this.restartTimeout) clearTimeout(this.restartTimeout);
-        // Restart quickly so no speech is missed
         this.restartTimeout = setTimeout(() => {
           if (this.userActive) {
             try {
+              this.setupRecognitionInstance();
               this.safeStart();
             } catch (err) {
-              console.warn('Retry start failed, scheduling next retry:', err);
-              this.restartTimeout = setTimeout(() => {
-                if (this.userActive) this.safeStart();
-              }, 400);
+              console.warn('Reconnect retry scheduled:', err);
             }
           }
-        }, 100);
+        }, 80);
       } else {
         this.isListening = false;
         if (this.onStatusChange) this.onStatusChange('idle');
@@ -237,9 +251,28 @@ class SpeechService {
     };
   }
 
+  commitSentence() {
+    if (!this.accumulatedSentence || !this.accumulatedSentence.trim()) return;
+
+    const sentenceToCommit = this.accumulatedSentence.trim();
+    this.accumulatedSentence = '';
+    this.lastInterim = '';
+
+    if (this.onResult) {
+      this.onResult({
+        transcript: sentenceToCommit,
+        isFinal: true,
+        confidence: 0.95
+      });
+    }
+  }
+
   changeLanguage(langCode) {
     if (this.currentLanguage === langCode) return;
     this.currentLanguage = langCode;
+    // Commit any pending words before switching language
+    this.commitSentence();
+
     if (this.userActive) {
       if (this.recognition) {
         try {
@@ -253,17 +286,26 @@ class SpeechService {
           this.setupRecognitionInstance();
           this.safeStart();
         }
-      }, 150);
+      }, 120);
     }
   }
 
   stop() {
     this.userActive = false;
     this.isListening = false;
+
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
     if (this.restartTimeout) {
       clearTimeout(this.restartTimeout);
       this.restartTimeout = null;
     }
+
+    // Commit any speech remaining in the accumulator
+    this.commitSentence();
+
     if (this.recognition) {
       try {
         this.recognition.stop();
