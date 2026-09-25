@@ -1,11 +1,12 @@
 import React from 'react';
-import { Mic, Square, Play, RotateCcw, Sparkles, Volume2 } from 'lucide-react';
+import { Mic, Square, Play, RotateCcw, Sparkles, CheckCircle2 } from 'lucide-react';
 
 export const LiveControlBar = ({
   isListening,
   volumeLevel,
   onStartListening,
   onStopListening,
+  onFinishSentence,
   onClearTranscript,
   onSimulateMeeting,
   hasEntries,
@@ -42,16 +43,16 @@ export const LiveControlBar = ({
 
           <div className="text-xs">
             <span className="font-semibold text-slate-300 block">
-              {isListening ? 'Listening to Meeting Audio...' : 'Microphone Ready'}
+              {isListening ? 'Listening Continuously...' : 'Microphone Ready'}
             </span>
             <span className="text-[11px] text-slate-400">
-              {isListening ? 'Speak naturally into device' : 'Click Start to listen'}
+              {isListening ? 'Speak at your own pace without rushing' : 'Click Start to listen'}
             </span>
           </div>
         </div>
 
-        {/* Center: Big Primary Record Button */}
-        <div className="flex items-center space-x-3">
+        {/* Center: Primary Controls */}
+        <div className="flex items-center space-x-2 sm:space-x-3">
           {!isListening ? (
             <button
               onClick={onStartListening}
@@ -61,13 +62,25 @@ export const LiveControlBar = ({
               <span>Start Live Listening</span>
             </button>
           ) : (
-            <button
-              onClick={onStopListening}
-              className="flex items-center space-x-2 px-6 py-3.5 rounded-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-semibold text-sm shadow-lg shadow-red-500/25 active:scale-95 transition-all cursor-pointer animate-pulse"
-            >
-              <Square className="w-5 h-5 fill-current" />
-              <span>Stop Listening</span>
-            </button>
+            <>
+              <button
+                onClick={onStopListening}
+                className="flex items-center space-x-2 px-5 py-3 rounded-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-red-500/25 active:scale-95 transition-all cursor-pointer"
+              >
+                <Square className="w-4 h-4 fill-current" />
+                <span>Stop</span>
+              </button>
+
+              {/* Manual Immediate Commit Button */}
+              <button
+                onClick={onFinishSentence}
+                className="flex items-center space-x-1.5 px-4 py-3 rounded-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs sm:text-sm font-semibold transition-all active:scale-95 cursor-pointer"
+                title="Finish current sentence immediately and translate"
+              >
+                <CheckCircle2 className="w-4 h-4 text-blue-400" />
+                <span>Done Speaking</span>
+              </button>
+            </>
           )}
 
           {/* End & Produce Summary Button (if allowed and entries exist) */}

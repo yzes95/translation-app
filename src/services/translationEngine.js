@@ -1,4 +1,4 @@
-// Translation Engine with Dialect Normalizer, Free In-Browser Online Engine,
+// Translation Engine with Advanced Dialect Normalizer, Free In-Browser Online Engine,
 // Optional AI (Gemini / Groq / OpenAI), and Offline Lexicon Fallback.
 
 const cache = new Map();
@@ -15,40 +15,61 @@ function decodeHtmlEntities(str) {
     .trim();
 }
 
-// Normalize colloquial spoken dialects (especially Egyptian, Levantine, Gulf)
-// so that translation models understand conversational idioms instead of literal dictionary terms.
+// Normalize colloquial spoken dialects (Egyptian, Levantine, Gulf)
+// so translation models understand conversational idioms instead of literal dictionary terms.
 export function normalizeArabicDialect(text) {
   if (!text) return '';
   let s = text.trim();
 
-  // Dialectal idioms & common phrases
   const replacements = [
-    // Egyptian friendly addresses & slang
-    [/\bيا عم الحج\b/gi, 'يا أخي'],
-    [/\bيا حج\b/gi, 'يا أخي'],
-    [/\bيا عمي\b/gi, 'يا صديقي'],
-    [/\bيا راجل\b/gi, 'يا صديقي'],
-    [/\bتست\b/gi, 'اختبار'],
+    // Prepositional phrases: "in the middle" vs literal "in the text"
+    [/\bفي النص\b|\bفي النُص\b|\bفالنص\b/gi, 'في منتصف الجملة'],
+    [/\bفي نص الكلام\b/gi, 'في منتصف الحديث'],
+    [/\bفي الأول\b|\bفالاول\b/gi, 'في البداية'],
+    [/\bفي الآخر\b|\bفالاخر\b/gi, 'في النهاية'],
 
-    // Expressions of warning / caution
+    // Friendly slang addresses & greetings
+    [/\bيا عم الحج\b|\bيا حاج\b/gi, 'يا أخي'],
+    [/\bيا عمي\b|\bيا راجل\b/gi, 'يا صديقي'],
+    [/\bالو\b|\bألو\b/gi, 'مرحباً'],
+    [/\bتست\b/gi, 'اختبار تجريبي'],
+
+    // Ownership & possessives
+    [/\bالكلام بتاعي\b|\bكلامي بتاعي\b/gi, 'كلامي'],
+    [/\bالترجمه بتاعتك\b|\bالترجمة بتاعتك\b/gi, 'ترجمتك'],
+    [/\bبتاعي\b/gi, 'الخاص بي'],
+    [/\bبتاعتي\b/gi, 'الخاصة بي'],
+    [/\bبتاعنا\b/gi, 'الخاص بنا'],
+    [/\bبتاعهم\b/gi, 'الخاص بهم'],
+
+    // Cutting off / interrupting speech & outputting
+    [/\bبتقطع كلامي\b|\bتقطع كلامي\b/gi, 'تقاطع حديثي'],
+    [/\bبيقطع كلامي\b/gi, 'يقاطع حديثي'],
+    [/\bبتطلع الكلام\b|\bبتطلع كلامي\b/gi, 'تُظهر الكلام'],
+    [/\bبيطلع الكلام\b/gi, 'يُظهر الكلام'],
+
+    // Binary choices: شغال ولا مش شغال
+    [/\bشغال ولا مش شغال\b/gi, 'هل يعمل أم لا يعمل'],
+    [/\bولا مش\b/gi, 'أم لست'],
+
+    // Negative questions & assertions
+    [/\bمش المفروض\b/gi, 'أليس من المفترض أن'],
+    [/\bمش ليه\b/gi, 'وليس لماذا'],
+    [/\bمش كده\b|\bمش كدا\b/gi, 'أليس كذلك'],
+    [/\bمش عايز\b|\bمش عاوز\b/gi, 'لا أريد'],
+    [/\bمش عارف\b/gi, 'لا أعلم'],
+    [/\bمش فاهم\b/gi, 'لا أفهم'],
+
+    // Activity state
+    [/\bقاعد شغال\b|\bفاضل شغال\b|\bتفضل شغال\b|\bتبقى شغال\b/gi, 'تظل مستمراً في العمل'],
+    [/\bما بتقفلش\b|\bمابتقفلش\b|\bمابيقفلش\b|\bما بيقفلش\b/gi, 'لا تتوقف عن العمل'],
     [/\bاوعى تكون\b/gi, 'إياك أن تكون'],
     [/\bاوعى\b/gi, 'إياك أن'],
-
-    // Verbs of state / staying active vs stopping
-    [/\bما بتقفلش\b/gi, 'لا تتوقف عن العمل'],
-    [/\bمابتقفلش\b/gi, 'لا تتوقف عن العمل'],
-    [/\bمابيقفلش\b/gi, 'لا يتوقف عن العمل'],
-    [/\bما بيقفلش\b/gi, 'لا يتوقف عن العمل'],
-    [/\bمش المفروض\b/gi, 'أليس من المفترض أن'],
-    [/\bقاعد شغال\b/gi, 'تظل مستمراً في العمل'],
-    [/\bفاضل شغال\b/gi, 'تظل مستمراً في العمل'],
-    [/\bتفضل شغال\b/gi, 'تظل مستمراً في العمل'],
-    [/\bتبقى شغال\b/gi, 'تستمر في العمل'],
     [/\bبتقفل\b/gi, 'تتوقف عن العمل'],
     [/\bبيقفل\b/gi, 'يتوقف عن العمل'],
     [/\bشغال\b/gi, 'يعمل'],
 
-    // Question words & particles
+    // Question particles
     [/\bليه\b/gi, 'لماذا'],
     [/\bإيه\b|\bايه\b/gi, 'ماذا'],
     [/\bازاي\b|\bإزاي\b/gi, 'كيف'],
@@ -56,7 +77,7 @@ export function normalizeArabicDialect(text) {
     [/\bامتى\b/gi, 'متى'],
     [/\bمين\b/gi, 'من'],
 
-    // Conjunctions & adverbs
+    // Connectors
     [/\bعشان\b|\bعلشان\b/gi, 'لكي'],
     [/\bدلوقتي\b/gi, 'الآن'],
     [/\bكده\b|\bكدا\b/gi, 'هكذا'],
@@ -170,14 +191,13 @@ export class TranslationEngine {
       // ignore
     }
 
-    // 6. Return normalized text or original
     return cleanText;
   }
 
   async translateWithAI(text, sourceLang, targetLang, { provider, apiKey, model }) {
     if (provider === 'gemini') {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-1.5-flash'}:generateContent?key=${apiKey}`;
-      const prompt = `You are a live simultaneous meeting interpreter. Translate the following speech from ${sourceLang} to ${targetLang}. Preserve the natural conversational tone and translate colloquial dialect idioms accurately. Output ONLY the translated text, nothing else.\n\nSpeech:\n${text}`;
+      const prompt = `You are a live simultaneous meeting interpreter. Translate the following speech from ${sourceLang} to ${targetLang}. Preserve natural conversational tone and accurately translate colloquial dialect idioms (such as Egyptian Arabic slang). Output ONLY the translated text without quotes or explanations.\n\nSpeech:\n${text}`;
       
       const res = await fetch(url, {
         method: 'POST',
@@ -201,7 +221,7 @@ export class TranslationEngine {
           messages: [
             {
               role: 'system',
-              content: `You are a professional simultaneous interpreter. Translate conversational speech from ${sourceLang} to ${targetLang}. Handle colloquial dialect idioms naturally. Output ONLY the translated sentence.`
+              content: `You are a professional simultaneous interpreter. Translate conversational speech from ${sourceLang} to ${targetLang}. Accurately understand colloquial dialect idioms (like Egyptian slang). Output ONLY the translated sentence.`
             },
             {
               role: 'user',

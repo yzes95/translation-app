@@ -329,6 +329,7 @@ export function App() {
           volumeLevel={volumeLevel}
           onStartListening={handleStartListening}
           onStopListening={handleStopListening}
+          onFinishSentence={() => speechService.forceCommit()}
           onClearTranscript={handleClearTranscript}
           onSimulateMeeting={handleSimulateMeeting}
           hasEntries={entries.length > 0}

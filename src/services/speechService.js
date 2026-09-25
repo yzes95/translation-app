@@ -14,6 +14,7 @@ class SpeechService {
     this.currentLanguage = 'ar';
     this.restartTimeout = null;
     this.silenceTimer = null;
+    this.pauseDelayMs = 2800; // Natural meeting pause delay (2.8 seconds)
 
     // Conversational Accumulator: keeps full sentence intact across natural pauses
     this.accumulatedSentence = '';
@@ -34,6 +35,10 @@ class SpeechService {
 
   isSupported() {
     return Boolean(this.SpeechRecognition);
+  }
+
+  setPauseDelay(seconds) {
+    this.pauseDelayMs = Math.max(1500, Math.min(6000, seconds * 1000));
   }
 
   async initAudioVisualizer() {
@@ -146,7 +151,7 @@ class SpeechService {
       this.recognition.start();
     } catch (e) {
       if (e.name !== 'InvalidStateError') {
-        console.warn('SafeStart note:', e.message);
+        console.warn('SafeStart caught:', e.message);
       }
     }
   }
@@ -188,34 +193,32 @@ class SpeechService {
       }
 
       if (finalTranscript.trim()) {
-        // Accumulate final chunk into the current conversational thought
         this.accumulatedSentence = (this.accumulatedSentence + ' ' + finalTranscript.trim()).trim();
       }
 
       this.lastInterim = interimTranscript.trim();
       const currentFullText = (this.accumulatedSentence + ' ' + this.lastInterim).trim();
 
-      // Show real-time interim speech bubble
+      // Emit live text update for interim display
       if (this.onResult && currentFullText) {
         this.onResult({
           transcript: currentFullText,
           isFinal: false,
-          confidence: 0.8
+          confidence: 0.85
         });
       }
 
-      // Reset sentence pause debouncer (1.4 seconds of silence before finalizing sentence)
+      // Reset sentence pause timer (generous 2.8s pause to prevent cutting speech in half)
       if (this.silenceTimer) clearTimeout(this.silenceTimer);
 
       if (this.accumulatedSentence) {
         this.silenceTimer = setTimeout(() => {
           this.commitSentence();
-        }, 1400);
+        }, this.pauseDelayMs);
       }
     };
 
     this.recognition.onerror = (event) => {
-      // Natural silence or pauses in meetings: keep listening without aborting!
       if (event.error === 'no-speech' || event.error === 'aborted') {
         return;
       }
@@ -225,13 +228,12 @@ class SpeechService {
         this.isListening = false;
         if (this.onStatusChange) this.onStatusChange('idle');
         if (this.onError) {
-          this.onError({ code: event.error, message: 'Microphone permission was denied.' });
+          this.onError({ code: event.error, message: 'Microphone permission denied.' });
         }
       }
     };
 
     this.recognition.onend = () => {
-      // If user still wants listening, seamlessly reconnect without losing words
       if (this.userActive) {
         if (this.restartTimeout) clearTimeout(this.restartTimeout);
         this.restartTimeout = setTimeout(() => {
@@ -240,10 +242,10 @@ class SpeechService {
               this.setupRecognitionInstance();
               this.safeStart();
             } catch (err) {
-              console.warn('Reconnect retry scheduled:', err);
+              console.warn('Recognition restart note:', err);
             }
           }
-        }, 80);
+        }, 100);
       } else {
         this.isListening = false;
         if (this.onStatusChange) this.onStatusChange('idle');
@@ -252,6 +254,11 @@ class SpeechService {
   }
 
   commitSentence() {
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+
     if (!this.accumulatedSentence || !this.accumulatedSentence.trim()) return;
 
     const sentenceToCommit = this.accumulatedSentence.trim();
@@ -267,10 +274,13 @@ class SpeechService {
     }
   }
 
+  forceCommit() {
+    this.commitSentence();
+  }
+
   changeLanguage(langCode) {
     if (this.currentLanguage === langCode) return;
     this.currentLanguage = langCode;
-    // Commit any pending words before switching language
     this.commitSentence();
 
     if (this.userActive) {
