@@ -1,11 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { X, Volume2, HardDrive, Smartphone, Check, Sparkles, Key, ExternalLink } from 'lucide-react';
+import {
+  X,
+  Volume2,
+  HardDrive,
+  Smartphone,
+  Check,
+  Sparkles,
+  Key,
+  ExternalLink,
+  ShieldCheck,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  HelpCircle,
+  Heart
+} from 'lucide-react';
+import { translationEngine } from '../../services/translationEngine';
 
 export const SettingsModal = ({
   isOpen,
   onClose,
   settings,
-  onUpdateSettings
+  onUpdateSettings,
+  onOpenAIGuide,
+  onOpenSupport
 }) => {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -14,6 +32,8 @@ export const SettingsModal = ({
   const [aiProvider, setAiProvider] = useState('default');
   const [apiKey, setApiKey] = useState('');
   const [isSavedAI, setIsSavedAI] = useState(false);
+  const [isTestingAI, setIsTestingAI] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState(null);
 
   useEffect(() => {
     try {
@@ -58,6 +78,7 @@ export const SettingsModal = ({
   const handleSaveAIConfig = () => {
     if (aiProvider === 'default') {
       localStorage.removeItem('linguaflow_ai_config');
+      setAiTestResult(null);
     } else {
       localStorage.setItem(
         'linguaflow_ai_config',
@@ -70,6 +91,22 @@ export const SettingsModal = ({
     }
     setIsSavedAI(true);
     setTimeout(() => setIsSavedAI(false), 2500);
+  };
+
+  const handleTestConnection = async () => {
+    if (!apiKey.trim()) {
+      setAiTestResult({ success: false, error: 'Please enter your API key first.' });
+      return;
+    }
+    setIsTestingAI(true);
+    setAiTestResult(null);
+    const res = await translationEngine.testAIConnection({
+      provider: aiProvider,
+      apiKey: apiKey.trim(),
+      model: aiProvider === 'gemini' ? 'gemini-1.5-flash' : 'llama-3.3-70b-versatile'
+    });
+    setIsTestingAI(false);
+    setAiTestResult(res);
   };
 
   return (
@@ -90,28 +127,51 @@ export const SettingsModal = ({
         <div className="p-6 space-y-6 text-sm max-h-[75vh] overflow-y-auto">
           {/* AI Model Provider Section */}
           <div className="space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center space-x-1.5">
-              <Sparkles className="w-4 h-4 text-indigo-400" />
-              <span>AI Translation Provider</span>
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center space-x-1.5">
+                <Sparkles className="w-4 h-4 text-indigo-400" />
+                <span>AI Translation Engine</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  if (onOpenAIGuide) onOpenAIGuide();
+                }}
+                className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold flex items-center space-x-1 bg-indigo-500/10 px-2.5 py-1 rounded-lg border border-indigo-500/20 transition-colors"
+              >
+                <HelpCircle className="w-3 h-3" />
+                <span>3-Step Key Guide</span>
+              </button>
+            </div>
 
             <div className="p-4 bg-slate-950/60 rounded-2xl border border-slate-800/80 space-y-3">
               <div>
                 <label className="text-xs font-medium text-slate-300 block mb-1">
-                  Translation Engine
+                  Active Mode
                 </label>
                 <select
                   value={aiProvider}
-                  onChange={(e) => setAiProvider(e.target.value)}
+                  onChange={(e) => {
+                    setAiProvider(e.target.value);
+                    setAiTestResult(null);
+                  }}
                   className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500"
                 >
-                  <option value="default">In-Browser + Dialect Normalizer (Default - No Key Needed)</option>
-                  <option value="gemini">Google Gemini 1.5 Flash (Free AI API Key)</option>
-                  <option value="groq">Groq Llama 3.3 70B (Free & Ultra Fast)</option>
+                  <option value="default">Standard Free Mode (Zero-Setup - Recommended for Elders)</option>
+                  <option value="groq">Groq Llama 3.3 70B (Free Personal Key - Ultra Fast)</option>
+                  <option value="gemini">Google Gemini 1.5 Flash (Free Personal Key - Slang Pro)</option>
                 </select>
               </div>
 
-              {aiProvider !== 'default' && (
+              {aiProvider === 'default' ? (
+                <div className="p-3 bg-emerald-950/20 rounded-xl border border-emerald-500/20 flex items-start space-x-2 text-xs text-emerald-300">
+                  <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+                  <p className="m-0 leading-relaxed text-[11px]">
+                    <strong>Standard Free Mode is active!</strong> Works automatically across all 9 languages (Arabic, English, Urdu, German, French, Hindi, Russian, Ukrainian, Turkish) with zero configuration or keys required.
+                  </p>
+                </div>
+              ) : (
                 <div className="space-y-2 pt-1">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-medium text-slate-300 flex items-center">
@@ -133,22 +193,63 @@ export const SettingsModal = ({
                     type="password"
                     placeholder={`Paste your ${aiProvider === 'gemini' ? 'AIza...' : 'gsk_...'} key here`}
                     value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
+                    onChange={(e) => {
+                      setApiKey(e.target.value);
+                      setAiTestResult(null);
+                    }}
                     className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs font-mono placeholder-slate-600 focus:outline-none focus:border-indigo-500"
                   />
                   <p className="text-[10px] text-slate-400 leading-tight">
                     Your key is stored securely in your browser's private local storage and never leaves your device.
                   </p>
+
+                  {/* Test Feedback */}
+                  {aiTestResult && (
+                    <div
+                      className={`p-2.5 rounded-xl border flex items-start space-x-2 text-xs animate-fadeIn ${
+                        aiTestResult.success
+                          ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                          : 'bg-red-950/40 border-red-500/40 text-red-300'
+                      }`}
+                    >
+                      {aiTestResult.success ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                      )}
+                      <span className="text-[11px] leading-tight">
+                        {aiTestResult.message || aiTestResult.error}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
-              <div className="flex justify-end pt-1">
+              <div className="flex items-center justify-between pt-1">
+                {aiProvider !== 'default' ? (
+                  <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={isTestingAI || !apiKey.trim()}
+                    className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-medium transition-colors"
+                  >
+                    {isTestingAI ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                    )}
+                    <span>{isTestingAI ? 'Testing...' : 'Test Key'}</span>
+                  </button>
+                ) : (
+                  <div />
+                )}
+
                 <button
                   onClick={handleSaveAIConfig}
                   className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition-all"
                 >
                   {isSavedAI ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : null}
-                  <span>{isSavedAI ? 'Saved!' : 'Save AI Settings'}</span>
+                  <span>{isSavedAI ? 'Saved!' : 'Save Settings'}</span>
                 </button>
               </div>
             </div>
@@ -188,6 +289,30 @@ export const SettingsModal = ({
                 className="w-full accent-blue-600 cursor-pointer"
               />
             </div>
+          </div>
+
+          {/* Support Developer Banner */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-950/30 to-slate-900 border border-rose-500/20 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400">
+                <Heart className="w-5 h-5 fill-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold text-white m-0">Support LinguaFlow</h3>
+                <p className="text-[11px] text-slate-400 m-0">
+                  Tip from £1 to support development
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                onClose();
+                if (onOpenSupport) onOpenSupport();
+              }}
+              className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow transition-all cursor-pointer"
+            >
+              Tip / Support
+            </button>
           </div>
 
           {/* PWA Installation Card */}

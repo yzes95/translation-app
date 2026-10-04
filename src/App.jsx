@@ -7,6 +7,8 @@ import { SummaryModal } from './components/summary/SummaryModal';
 import { HistoryDrawer } from './components/history/HistoryDrawer';
 import { SettingsModal } from './components/settings/SettingsModal';
 import { InstallModal } from './components/install/InstallModal';
+import { SupportModal } from './components/support/SupportModal';
+import { AIKeyGuideModal } from './components/settings/AIKeyGuideModal';
 
 import { speechService } from './services/speechService';
 import { translationEngine } from './services/translationEngine';
@@ -40,6 +42,8 @@ export function App() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isInstallOpen, setIsInstallOpen] = useState(false);
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
+  const [isAIGuideOpen, setIsAIGuideOpen] = useState(false);
   const [pastMeetings, setPastMeetings] = useState([]);
 
   // Settings
@@ -305,6 +309,8 @@ export function App() {
         onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenInstall={() => setIsInstallOpen(true)}
+        onOpenSupport={() => setIsSupportOpen(true)}
+        onOpenAIGuide={() => setIsAIGuideOpen(true)}
         isListening={isListening}
         meetingDuration={meetingDuration}
       />
@@ -376,6 +382,23 @@ export function App() {
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         onUpdateSettings={setSettings}
+        onOpenAIGuide={() => setIsAIGuideOpen(true)}
+        onOpenSupport={() => setIsSupportOpen(true)}
+      />
+
+      {/* AI Key Setup Guide Modal */}
+      <AIKeyGuideModal
+        isOpen={isAIGuideOpen}
+        onClose={() => setIsAIGuideOpen(false)}
+        onSaveSuccess={() => {
+          // Re-render settings or state if needed
+        }}
+      />
+
+      {/* Support / Tip Developer Modal */}
+      <SupportModal
+        isOpen={isSupportOpen}
+        onClose={() => setIsSupportOpen(false)}
       />
 
       {/* PWA / APK Installation Modal */}

@@ -1,10 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Languages, History, Settings, Wifi, WifiOff, Smartphone } from 'lucide-react';
+import {
+  Languages,
+  History,
+  Settings,
+  Wifi,
+  WifiOff,
+  Smartphone,
+  Heart,
+  Sparkles
+} from 'lucide-react';
 
 export const Header = ({
   onOpenHistory,
   onOpenSettings,
   onOpenInstall,
+  onOpenSupport,
+  onOpenAIGuide,
   isListening,
   meetingDuration
 }) => {
@@ -63,19 +74,39 @@ export const Header = ({
 
         {/* Actions */}
         <div className="flex items-center space-x-2">
+          {/* AI Setup / Guide button */}
+          <button
+            onClick={onOpenAIGuide}
+            className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-white border border-indigo-500/30 text-xs font-medium transition-all cursor-pointer"
+            title="AI Setup & Guide (Groq / Gemini)"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <span>AI Setup</span>
+          </button>
+
+          {/* Support / Tip Developer Button */}
+          <button
+            onClick={onOpenSupport}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-semibold text-xs shadow-md shadow-rose-600/20 active:scale-95 transition-all cursor-pointer"
+            title="Support Developer (from £1)"
+          >
+            <Heart className="w-3.5 h-3.5 fill-white text-white" />
+            <span>Support</span>
+          </button>
+
           {/* Get App / Install Button (PWA or APK Choice) */}
           <button
             onClick={onOpenInstall}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-xs shadow-md shadow-blue-600/20 active:scale-95 transition-all cursor-pointer"
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-xs shadow-md shadow-blue-600/20 active:scale-95 transition-all cursor-pointer"
             title="Install as PWA or Download Android APK"
           >
             <Smartphone className="w-3.5 h-3.5" />
-            <span>Install / APK</span>
+            <span className="hidden md:inline">Install / APK</span>
           </button>
 
           {/* Offline / Online badge */}
           <div
-            className={`hidden md:flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
+            className={`hidden lg:flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
               isOnline
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                 : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
@@ -88,7 +119,7 @@ export const Header = ({
 
           <button
             onClick={onOpenHistory}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition-colors text-sm"
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition-colors text-xs"
             title="Meeting History"
           >
             <History className="w-4 h-4" />

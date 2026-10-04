@@ -110,6 +110,62 @@ export class TranslationEngine {
     }
   }
 
+  async fetchSingleWebTranslation(queryText, src, tgt) {
+    if (!queryText || src === tgt) return queryText;
+
+    // 1. MyMemory Neural Web API
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4500);
+
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(queryText)}&langpair=${src}|${tgt}`;
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.responseData && data.responseData.translatedText) {
+          const result = decodeHtmlEntities(data.responseData.translatedText);
+          if (
+            result &&
+            result.toLowerCase() !== queryText.toLowerCase() &&
+            !result.includes('MYMEMORY WARNING') &&
+            !result.includes('NO QUERY SPECIFIED')
+          ) {
+            return result;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`MyMemory failed for ${src} -> ${tgt}:`, err.message);
+    }
+
+    // 2. Secondary public translation fallback
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src}&tl=${tgt}&dt=t&q=${encodeURIComponent(queryText)}`;
+      const res = await fetch(gtxUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json) && json[0] && Array.isArray(json[0])) {
+          const combined = json[0]
+            .map((item) => item[0])
+            .filter(Boolean)
+            .join('');
+          if (combined && combined.toLowerCase() !== queryText.toLowerCase()) {
+            return combined;
+          }
+        }
+      }
+    } catch {
+      // Secondary fallback silently ignored if blocked by CORS or network
+    }
+
+    return '';
+  }
+
   async translate(text, sourceLang, targetLang) {
     if (!text || !text.trim()) return '';
     if (sourceLang === targetLang) return text;
@@ -142,29 +198,31 @@ export class TranslationEngine {
       queryText = normalizeArabicDialect(cleanText);
     }
 
-    // 4. Free In-Browser Neural Translation API
+    // 4. Free In-Browser Multi-Language Neural Translation (All 9 languages with English Pivot)
     const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
     if (isOnline) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 4500);
+      // Direct attempt
+      let webResult = await this.fetchSingleWebTranslation(queryText, sourceLang, targetLang);
 
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(queryText)}&langpair=${sourceLang}|${targetLang}`;
-        const response = await fetch(url, { signal: controller.signal });
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.responseData && data.responseData.translatedText) {
-            const result = decodeHtmlEntities(data.responseData.translatedText);
-            if (result && result.toLowerCase() !== cleanText.toLowerCase()) {
-              cache.set(cacheKey, result);
-              return result;
+      // Smart English Pivot: For non-English pairs (e.g. Urdu -> Ukrainian, Turkish -> Hindi)
+      // If direct translation produced nothing or returned unchanged text, pivot through English
+      if (!webResult && sourceLang !== 'en' && targetLang !== 'en') {
+        try {
+          const pivotToEn = await this.fetchSingleWebTranslation(queryText, sourceLang, 'en');
+          if (pivotToEn && pivotToEn.toLowerCase() !== queryText.toLowerCase()) {
+            const finalFromEn = await this.fetchSingleWebTranslation(pivotToEn, 'en', targetLang);
+            if (finalFromEn) {
+              webResult = finalFromEn;
             }
           }
+        } catch (pivotErr) {
+          console.warn('English pivot translation failed:', pivotErr);
         }
-      } catch (err) {
-        console.warn('Online translation failed:', err.message);
+      }
+
+      if (webResult) {
+        cache.set(cacheKey, webResult);
+        return webResult;
       }
     }
 
@@ -196,9 +254,10 @@ export class TranslationEngine {
 
   async translateWithAI(text, sourceLang, targetLang, { provider, apiKey, model }) {
     if (provider === 'gemini') {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-1.5-flash'}:generateContent?key=${apiKey}`;
+      const selectedModel = model || 'gemini-1.5-flash';
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`;
       const prompt = `You are a live simultaneous meeting interpreter. Translate the following speech from ${sourceLang} to ${targetLang}. Preserve natural conversational tone and accurately translate colloquial dialect idioms (such as Egyptian Arabic slang). Output ONLY the translated text without quotes or explanations.\n\nSpeech:\n${text}`;
-      
+
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -206,18 +265,25 @@ export class TranslationEngine {
           contents: [{ parts: [{ text: prompt }] }]
         })
       });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData?.error?.message || `Gemini API error (HTTP ${res.status})`);
+      }
+
       const data = await res.json();
       return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
     } else if (provider === 'groq') {
+      const selectedModel = model || 'llama-3.3-70b-versatile';
       const url = 'https://api.groq.com/openai/v1/chat/completions';
       const res = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          Authorization: `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: model || 'llama-3.3-70b-versatile',
+          model: selectedModel,
           messages: [
             {
               role: 'system',
@@ -231,10 +297,49 @@ export class TranslationEngine {
           temperature: 0.2
         })
       });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData?.error?.message || `Groq API error (HTTP ${res.status})`);
+      }
+
       const data = await res.json();
       return data?.choices?.[0]?.message?.content?.trim() || '';
     }
     return '';
+  }
+
+  // Quick live test for user verification in Settings / Guide
+  async testAIConnection({ provider, apiKey, model }) {
+    if (!apiKey || !apiKey.trim()) {
+      return { success: false, error: 'Please enter an API key first.' };
+    }
+
+    try {
+      const sampleText = 'Hello, this is a test.';
+      const result = await this.translateWithAI(sampleText, 'en', 'ar', {
+        provider,
+        apiKey: apiKey.trim(),
+        model
+      });
+
+      if (result && result.trim()) {
+        return {
+          success: true,
+          message: `Connected successfully! Test translation: "${result.trim()}"`
+        };
+      } else {
+        return {
+          success: false,
+          error: 'Connected, but the model returned an empty test response.'
+        };
+      }
+    } catch (err) {
+      return {
+        success: false,
+        error: err.message || 'Connection failed. Please check the key and network connection.'
+      };
+    }
   }
 }
 
