@@ -8,21 +8,33 @@ import {
   ShieldCheck,
   RefreshCw,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Landmark,
+  Copy,
+  Check
 } from 'lucide-react';
 import { PAYMENT_CONFIG } from '../../config/paymentConfig';
+import { DONATION_CONFIG } from '../../config/donationConfig';
 import { apiService } from '../../services/apiService';
 
 export const SupportModal = ({ isOpen, onClose }) => {
   const [selectedTier, setSelectedTier] = useState(PAYMENT_CONFIG.tiers[1] || PAYMENT_CONFIG.tiers[0]);
   const [customAmount, setCustomAmount] = useState('');
-  const [activePaymentMethod, setActivePaymentMethod] = useState('card'); // 'card' | 'paypal'
+  const [activePaymentMethod, setActivePaymentMethod] = useState('stripe'); // 'stripe' | 'paypal' | 'bank'
   const [isProcessingStripe, setIsProcessingStripe] = useState(false);
   const [stripeError, setStripeError] = useState(null);
   const [paypalLoaded, setPaypalLoaded] = useState(false);
+  const [copiedField, setCopiedField] = useState(null);
   const paypalContainerRef = useRef(null);
 
   const currentAmount = customAmount ? parseFloat(customAmount) || 1 : selectedTier?.amount || 3;
+
+  const handleCopy = (fieldKey, value) => {
+    if (!value) return;
+    navigator.clipboard.writeText(value);
+    setCopiedField(fieldKey);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
 
   // Load PayPal SDK dynamically
   useEffect(() => {
@@ -88,21 +100,25 @@ export const SupportModal = ({ isOpen, onClose }) => {
     setStripeError(null);
 
     try {
-      const { clientSecret } = await apiService.createTipSession(currentAmount);
-      // If Stripe embedded checkout is used, or fallback redirect
-      if (clientSecret) {
-        // Redirect to Stripe checkout
-        window.location.href = `https://checkout.stripe.com/c/pay/${clientSecret}`;
+      const data = await apiService.createTipSession(currentAmount);
+      if (data && data.url) {
+        window.location.href = data.url;
+      } else if (data && data.clientSecret) {
+        window.location.href = `https://checkout.stripe.com/c/pay/${data.clientSecret}`;
+      } else {
+        throw new Error('No checkout URL returned by server.');
       }
     } catch (err) {
       console.warn('Stripe checkout error:', err);
       setStripeError(
-        'The tip server is currently waking up or configuring live keys. You can also tip via PayPal below!'
+        'The server is waking up or updating live keys. You can also tip instantly via PayPal or Pay by Bank below!'
       );
     } finally {
       setIsProcessingStripe(false);
     }
   };
+
+  const bank = DONATION_CONFIG.bankDetails || {};
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
@@ -118,7 +134,7 @@ export const SupportModal = ({ isOpen, onClose }) => {
                 <span>Support LinguaFlow</span>
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
               </h2>
-              <p className="text-[11px] text-slate-400 m-0">Keep free live translation active for everyone</p>
+              <p className="text-[11px] text-slate-400 m-0">Help keep free live translation accessible to everyone</p>
             </div>
           </div>
           <button
@@ -134,7 +150,7 @@ export const SupportModal = ({ isOpen, onClose }) => {
           {/* Friendly Note */}
           <div className="p-3.5 bg-slate-950/60 rounded-2xl border border-slate-800/80 text-xs text-slate-300 leading-relaxed">
             <p className="m-0">
-              LinguaFlow is completely free. Tipping helps support server capacity so everyone gets a smooth, fast meeting experience!
+              LinguaFlow is completely free. Tipping helps cover server capacity so everyone enjoys fast, unlimited live speech translation!
             </p>
           </div>
 
@@ -188,23 +204,26 @@ export const SupportModal = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          {/* Payment Method Selector */}
+          {/* 3 Payment Methods Selector */}
           <div className="space-y-3 pt-1">
-            <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+            <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
               <button
-                onClick={() => setActivePaymentMethod('card')}
-                className={`flex-1 flex items-center justify-center space-x-1.5 py-2 text-xs font-semibold rounded-lg transition-all ${
-                  activePaymentMethod === 'card'
+                type="button"
+                onClick={() => setActivePaymentMethod('stripe')}
+                className={`flex items-center justify-center space-x-1.5 py-2 text-xs font-semibold rounded-lg transition-all ${
+                  activePaymentMethod === 'stripe'
                     ? 'bg-rose-600 text-white shadow'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <CreditCard className="w-3.5 h-3.5" />
-                <span>Card / Apple Pay / Google Pay / Bank</span>
+                <span>Stripe</span>
               </button>
+
               <button
+                type="button"
                 onClick={() => setActivePaymentMethod('paypal')}
-                className={`flex-1 flex items-center justify-center space-x-1.5 py-2 text-xs font-semibold rounded-lg transition-all ${
+                className={`flex items-center justify-center space-x-1.5 py-2 text-xs font-semibold rounded-lg transition-all ${
                   activePaymentMethod === 'paypal'
                     ? 'bg-rose-600 text-white shadow'
                     : 'text-slate-400 hover:text-slate-200'
@@ -212,25 +231,38 @@ export const SupportModal = ({ isOpen, onClose }) => {
               >
                 <span>🅿️ PayPal</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setActivePaymentMethod('bank')}
+                className={`flex items-center justify-center space-x-1.5 py-2 text-xs font-semibold rounded-lg transition-all ${
+                  activePaymentMethod === 'bank'
+                    ? 'bg-rose-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Landmark className="w-3.5 h-3.5" />
+                <span>Pay by Bank</span>
+              </button>
             </div>
 
-            {/* Tab 1: Card / Stripe / Pay by Bank */}
-            {activePaymentMethod === 'card' && (
+            {/* Tab 1: Stripe (Visa, Mastercard, Apple Pay, Google Pay) */}
+            {activePaymentMethod === 'stripe' && (
               <div className="p-4 bg-slate-950/70 rounded-2xl border border-slate-800/80 space-y-3 animate-fadeIn">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800/60">
                   <span className="text-xs font-bold text-slate-200">
-                    Visa, Mastercard, Apple Pay, Google Pay, Pay by Bank
+                    Visa, Mastercard, Apple Pay, Google Pay
                   </span>
                   <ShieldCheck className="w-4 h-4 text-emerald-400" />
                 </div>
 
                 <p className="text-xs text-slate-300 m-0">
-                  Click below to contribute{' '}
+                  Contribute{' '}
                   <strong>
                     {PAYMENT_CONFIG.currencySymbol}
                     {currentAmount}
                   </strong>{' '}
-                  securely via Stripe:
+                  securely with credit/debit card, Apple Pay, or Google Pay via Stripe:
                 </p>
 
                 {stripeError && (
@@ -249,13 +281,13 @@ export const SupportModal = ({ isOpen, onClose }) => {
                   {isProcessingStripe ? (
                     <>
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Connecting to Checkout...</span>
+                      <span>Connecting to Stripe...</span>
                     </>
                   ) : (
                     <>
                       <span>
-                        Proceed with {PAYMENT_CONFIG.currencySymbol}
-                        {currentAmount}
+                        Proceed to Stripe Checkout ({PAYMENT_CONFIG.currencySymbol}
+                        {currentAmount})
                       </span>
                       <ExternalLink className="w-3.5 h-3.5" />
                     </>
@@ -286,6 +318,161 @@ export const SupportModal = ({ isOpen, onClose }) => {
                 </div>
               </div>
             )}
+
+            {/* Tab 3: Pay by Bank (Direct Transfer Details) */}
+            {activePaymentMethod === 'bank' && (
+              <div className="p-4 bg-slate-950/70 rounded-2xl border border-slate-800/80 space-y-3 animate-fadeIn">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800/60">
+                  <span className="text-xs font-bold text-slate-200">
+                    Direct Bank Transfer (Wise UK & International)
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                    0% fees
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-300 m-0">
+                  Send your contribution directly from your UK banking app or via international transfer using the account details below:
+                </p>
+
+                <div className="space-y-2 pt-1 font-mono text-xs">
+                  {/* Account Name */}
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                    <div>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-sans">
+                        Account Holder
+                      </span>
+                      <span className="font-semibold text-slate-200">{bank.accountHolder}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy('accountHolder', bank.accountHolder)}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                      title="Copy Account Holder"
+                    >
+                      {copiedField === 'accountHolder' ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Sort Code & Account Number (UK) */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-sans">
+                          Sort Code (UK)
+                        </span>
+                        <span className="font-semibold text-white">{bank.sortCode}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy('sortCode', bank.sortCode)}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                        title="Copy Sort Code"
+                      >
+                        {copiedField === 'sortCode' ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-sans">
+                          Account Number
+                        </span>
+                        <span className="font-semibold text-white">{bank.accountNumber}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy('accountNumber', bank.accountNumber)}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                        title="Copy Account Number"
+                      >
+                        {copiedField === 'accountNumber' ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* IBAN (International) */}
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                    <div className="truncate pr-2">
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-sans">
+                        IBAN (International)
+                      </span>
+                      <span className="font-semibold text-white select-all text-[11px]">{bank.iban}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy('iban', bank.iban)}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors shrink-0"
+                      title="Copy IBAN"
+                    >
+                      {copiedField === 'iban' ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Bank & BIC */}
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                    <div>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-sans">
+                        Bank & SWIFT / BIC
+                      </span>
+                      <span className="font-semibold text-slate-200">
+                        {bank.bankName} • {bank.swiftBic}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy('swiftBic', bank.swiftBic)}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                      title="Copy BIC"
+                    >
+                      {copiedField === 'swiftBic' ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Reference */}
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                    <div>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-sans">
+                        Payment Reference
+                      </span>
+                      <span className="font-semibold text-indigo-300">{bank.reference}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy('reference', bank.reference)}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                      title="Copy Reference"
+                    >
+                      {copiedField === 'reference' ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -294,7 +481,7 @@ export const SupportModal = ({ isOpen, onClose }) => {
           <span className="text-[11px] text-slate-500">Thank you for making LinguaFlow lively! 💖</span>
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors"
+            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors cursor-pointer"
           >
             Close
           </button>

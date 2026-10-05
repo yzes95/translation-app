@@ -23,4 +23,4 @@ export const PAYMENT_CONFIG = {
 // During development, defaults to local or can point directly to the deployed Render Web Service
 export const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? 'http://localhost:5000' : 'https://linguaflow-api.onrender.com');
+  (import.meta.env.DEV ? 'http://localhost:5000' : 'https://linguaflow-api-e8h6.onrender.com');

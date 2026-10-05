@@ -92,6 +92,20 @@ function getUserUsage(userId) {
 }
 
 // -------------------------------------------------------------
+// 0. Root Status Endpoint
+// -------------------------------------------------------------
+app.get('/', (req, res) => {
+  res.json({
+    status: 'online',
+    name: 'LinguaFlow API Backend',
+    version: '1.0.0',
+    uptime: process.uptime(),
+    geminiConfigured: !!process.env.GEMINI_API_KEY,
+    stripeConfigured: !!stripe
+  });
+});
+
+// -------------------------------------------------------------
 // 1. Health Check (Used by PWA for warming-up detection)
 // -------------------------------------------------------------
 app.get('/health', (req, res) => {
@@ -247,7 +261,7 @@ ${transcriptText}`;
 });
 
 // -------------------------------------------------------------
-// 5. Stripe Embedded Checkout Session for Tips (£1 to £5+)
+// 5. Stripe Hosted Checkout Session for Tips (£1 to £5+)
 // -------------------------------------------------------------
 app.post('/api/tips/checkout', async (req, res) => {
   if (!stripe) {
@@ -256,10 +270,10 @@ app.post('/api/tips/checkout', async (req, res) => {
 
   const { amountGbp = 5, returnUrl } = req.body;
   const amountPence = Math.max(100, Math.round(Number(amountGbp) * 100)); // Minimum £1.00
+  const siteUrl = returnUrl || req.headers.origin || 'https://yzes95.github.io/translation-app';
 
   try {
     const session = await stripe.checkout.sessions.create({
-      ui_mode: 'embedded',
       mode: 'payment',
       line_items: [
         {
@@ -274,10 +288,14 @@ app.post('/api/tips/checkout', async (req, res) => {
           quantity: 1
         }
       ],
-      return_url: `${returnUrl || req.headers.origin || 'https://linguaflow.onrender.com'}/?session_id={CHECKOUT_SESSION_ID}`
+      success_url: `${siteUrl}?tip=success`,
+      cancel_url: `${siteUrl}?tip=cancelled`
     });
 
-    res.json({ clientSecret: session.client_secret });
+    res.json({
+      url: session.url,
+      clientSecret: session.client_secret
+    });
   } catch (err) {
     console.error('Stripe session creation error:', err.message);
     res.status(500).json({ error: err.message });
