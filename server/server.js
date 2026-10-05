@@ -271,7 +271,11 @@ app.post('/api/tips/checkout', async (req, res) => {
   const { amountGbp = 5, returnUrl } = req.body;
   // Stripe minimum charge for GBP is 30p (£0.30)
   const amountPence = Math.max(30, Math.round(Number(amountGbp) * 100));
-  const siteUrl = returnUrl || req.headers.origin || 'https://yzes95.github.io/translation-app';
+  
+  let siteUrl = (returnUrl || req.headers.origin || 'https://yzes95.github.io/translation-app').replace(/\/$/, '');
+  if (siteUrl.includes('github.io') && !siteUrl.includes('translation-app')) {
+    siteUrl += '/translation-app';
+  }
 
   try {
     const session = await stripe.checkout.sessions.create({
@@ -289,8 +293,8 @@ app.post('/api/tips/checkout', async (req, res) => {
           quantity: 1
         }
       ],
-      success_url: `${siteUrl}?tip=success`,
-      cancel_url: `${siteUrl}?tip=cancelled`
+      success_url: `${siteUrl}/?tip=success&amount=${amountGbp}`,
+      cancel_url: `${siteUrl}/?tip=cancelled`
     });
 
     res.json({

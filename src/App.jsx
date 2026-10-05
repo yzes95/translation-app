@@ -57,6 +57,7 @@ export function App() {
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [isAIGuideOpen, setIsAIGuideOpen] = useState(false);
   const [pastMeetings, setPastMeetings] = useState([]);
+  const [tipNotification, setTipNotification] = useState(null);
 
   // Settings
   const [settings, setSettings] = useState({
@@ -73,6 +74,32 @@ export function App() {
   const settingsRef = useRef(settings);
   const entriesRef = useRef(entries);
   const activeModeRef = useRef(activeMode);
+
+  // Check URL query parameters for Stripe checkout return (?tip=success or ?tip=cancelled)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tipStatus = params.get('tip');
+      if (tipStatus === 'success') {
+        const amount = params.get('amount');
+        setTipNotification({
+          type: 'success',
+          title: 'Contribution Received! 💖',
+          message: amount
+            ? `Thank you so much for your £${amount} tip! Your generous support directly helps keep LinguaFlow lively and free for everyone.`
+            : 'Thank you so much for your generous support! Your contribution helps keep LinguaFlow lively and free for everyone.'
+        });
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (tipStatus === 'cancelled') {
+        setTipNotification({
+          type: 'cancelled',
+          title: 'Checkout Cancelled',
+          message: 'No payment was processed. LinguaFlow remains 100% free to use anytime!'
+        });
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     activeModeRef.current = activeMode;
@@ -461,6 +488,29 @@ export function App() {
         isOpen={isInstallOpen}
         onClose={() => setIsInstallOpen(false)}
       />
+
+      {/* Tip Feedback Notification Dialog */}
+      {tipNotification && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-md w-full p-6 sm:p-8 text-center space-y-5 shadow-2xl">
+            <div className="w-16 h-16 rounded-2xl bg-rose-500/20 text-rose-400 mx-auto flex items-center justify-center text-3xl border border-rose-500/30 shadow-lg shadow-rose-500/20">
+              {tipNotification.type === 'success' ? '💖' : 'ℹ️'}
+            </div>
+            <h3 className="text-2xl font-black text-white m-0">
+              {tipNotification.title}
+            </h3>
+            <p className="text-sm sm:text-base text-slate-300 leading-relaxed m-0">
+              {tipNotification.message}
+            </p>
+            <button
+              onClick={() => setTipNotification(null)}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white font-black text-base shadow-xl shadow-rose-600/20 transition-all cursor-pointer active:scale-98"
+            >
+              Continue to LinguaFlow
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

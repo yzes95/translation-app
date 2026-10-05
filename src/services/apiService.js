@@ -126,12 +126,13 @@ class ApiService {
 
   // Create Stripe Checkout Session
   async createTipSession(amountGbp) {
+    const returnUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
     const res = await fetch(`${API_BASE_URL}/api/tips/checkout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         amountGbp,
-        returnUrl: window.location.origin
+        returnUrl
       })
     });
 
