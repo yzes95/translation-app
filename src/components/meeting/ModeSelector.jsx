@@ -6,6 +6,7 @@ export const ModeSelector = ({
   activeMode, // 'basic' | 'smart' | 'unlimited'
   onSelectMode,
   onOpenAIGuide,
+  onOpenSupport,
   isListening
 }) => {
   const [serverStatus, setServerStatus] = useState(apiService.serverStatus);
@@ -150,11 +151,25 @@ export const ModeSelector = ({
         </button>
       </div>
 
-      {/* Gentle footer note */}
-      <div className="text-center pt-0.5">
-        <span className="text-[11px] text-slate-500 italic">
-          "LinguaFlow is completely free. 💖 You can tip as well to make the app more lively."
-        </span>
+      {/* Prominent, Warm Community Banner */}
+      <div
+        onClick={onOpenSupport}
+        className="w-full mt-3 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-rose-950/40 via-slate-900/90 to-indigo-950/40 border border-rose-500/30 hover:border-rose-500/60 shadow-lg shadow-rose-950/20 text-center cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] group"
+        title="Open Support & Tips"
+      >
+        <div className="flex items-center justify-center flex-wrap gap-2 text-sm sm:text-base font-semibold">
+          <span className="text-white font-bold">LinguaFlow is completely free.</span>
+          <span className="text-rose-400 group-hover:scale-125 transition-transform duration-200 inline-block text-lg">
+            💖
+          </span>
+          <span className="text-slate-200">
+            You can tip as well to make the app more lively.
+          </span>
+          <span className="inline-flex items-center space-x-1 px-3 py-1 rounded-xl bg-rose-500/20 group-hover:bg-rose-500/30 border border-rose-500/30 text-rose-300 group-hover:text-white text-xs sm:text-sm font-bold transition-all ml-1">
+            <span>Support & Tips</span>
+            <span>&rarr;</span>
+          </span>
+        </div>
       </div>
     </div>
   );

@@ -359,6 +359,7 @@ export function App() {
           activeMode={activeMode}
           onSelectMode={setActiveMode}
           onOpenAIGuide={() => setIsAIGuideOpen(true)}
+          onOpenSupport={() => setIsSupportOpen(true)}
           isListening={isListening}
         />
 

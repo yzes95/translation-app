@@ -84,14 +84,14 @@ export const Header = ({
             <span>AI Setup</span>
           </button>
 
-          {/* Support / Tip Developer Button */}
+          {/* Support & Tips Button */}
           <button
             onClick={onOpenSupport}
             className="flex items-center space-x-2 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-rose-600/25 active:scale-95 transition-all cursor-pointer"
-            title="Support Developer"
+            title="Support & Tips"
           >
             <Heart className="w-4 h-4 fill-white text-white" />
-            <span>Support</span>
+            <span>Support & Tips</span>
           </button>
 
           {/* Get App / Install Button (PWA or APK Choice) */}
