@@ -18,11 +18,11 @@ export const DONATION_CONFIG = {
   bankDetails: {
     enabled: true,
     accountHolder: 'Yahya (LinguaFlow Developer)', // Replace with your legal/account name
-    bankName: 'Monzo / Barclays / Lloyds / Revolut', // Replace with your bank name
-    sortCode: '00-00-00',                          // Replace with your 6-digit sort code
-    accountNumber: '12345678',                     // Replace with your 8-digit account number
-    iban: 'GB00BARC20000012345678',                // Replace with your international IBAN (for foreign donors)
-    swiftBic: 'BARCGB22',                          // Replace with your bank BIC/SWIFT code
+    bankName: 'Wise', // Replace with your bank name
+    sortCode: '23-08-01',                          // Replace with your 6-digit sort code
+    accountNumber: '53277190',                     // Replace with your 8-digit account number
+    iban: 'GB18TRWI23080153277190',                // Replace with your international IBAN (for foreign donors)
+    swiftBic: 'TRWIGB2LXXX',                          // Replace with your bank BIC/SWIFT code
     reference: 'LinguaFlow'                        // Suggested transfer reference for the user
   },
 

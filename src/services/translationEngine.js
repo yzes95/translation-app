@@ -1,5 +1,6 @@
 // Translation Engine with Advanced Dialect Normalizer, Free In-Browser Online Engine,
 // Optional AI (Gemini / Groq / OpenAI), and Offline Lexicon Fallback.
+import { apiService } from './apiService';
 
 const cache = new Map();
 
@@ -166,33 +167,48 @@ export class TranslationEngine {
     return '';
   }
 
-  async translate(text, sourceLang, targetLang) {
+  async translate(text, sourceLang, targetLang, mode = 'basic') {
     if (!text || !text.trim()) return '';
     if (sourceLang === targetLang) return text;
 
     const cleanText = text.trim();
-    const cacheKey = `${sourceLang}|${targetLang}|${cleanText.toLowerCase()}`;
+    const cacheKey = `${mode}|${sourceLang}|${targetLang}|${cleanText.toLowerCase()}`;
 
     // 1. Check in-memory cache
     if (cache.has(cacheKey)) {
       return cache.get(cacheKey);
     }
 
-    // 2. Check for User-Configured AI API Key (Gemini or Groq)
-    const aiConfig = this.getAIConfig();
-    if (aiConfig && aiConfig.apiKey && aiConfig.apiKey.trim()) {
-      try {
-        const aiResult = await this.translateWithAI(cleanText, sourceLang, targetLang, aiConfig);
-        if (aiResult && aiResult.trim()) {
-          cache.set(cacheKey, aiResult.trim());
-          return aiResult.trim();
+    // 2. Unlimited Mode: User-Configured AI API Key (Gemini or Groq)
+    if (mode === 'unlimited') {
+      const aiConfig = this.getAIConfig();
+      if (aiConfig && aiConfig.apiKey && aiConfig.apiKey.trim()) {
+        try {
+          const aiResult = await this.translateWithAI(cleanText, sourceLang, targetLang, aiConfig);
+          if (aiResult && aiResult.trim()) {
+            cache.set(cacheKey, aiResult.trim());
+            return aiResult.trim();
+          }
+        } catch (err) {
+          console.warn('Unlimited AI translation error, falling back to basic:', err);
         }
-      } catch (err) {
-        console.warn('AI translation error, falling back to neural web engine:', err);
       }
     }
 
-    // 3. Dialect Pre-Processing for Arabic
+    // 3. Smart Mode: Render Backend with 30 min daily quota
+    if (mode === 'smart') {
+      try {
+        const smartRes = await apiService.translateSmart(cleanText, sourceLang, targetLang);
+        if (smartRes && !smartRes.fallback && smartRes.translatedText) {
+          cache.set(cacheKey, smartRes.translatedText);
+          return smartRes.translatedText;
+        }
+      } catch (err) {
+        console.warn('Smart mode call failed, falling back to basic:', err);
+      }
+    }
+
+    // 4. Dialect Pre-Processing for Arabic
     let queryText = cleanText;
     if (sourceLang === 'ar') {
       queryText = normalizeArabicDialect(cleanText);

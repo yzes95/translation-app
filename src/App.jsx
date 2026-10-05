@@ -9,11 +9,13 @@ import { SettingsModal } from './components/settings/SettingsModal';
 import { InstallModal } from './components/install/InstallModal';
 import { SupportModal } from './components/support/SupportModal';
 import { AIKeyGuideModal } from './components/settings/AIKeyGuideModal';
+import { ModeSelector } from './components/meeting/ModeSelector';
 
 import { speechService } from './services/speechService';
 import { translationEngine } from './services/translationEngine';
 import { summarizerEngine } from './services/summarizerEngine';
 import { ttsService } from './services/ttsService';
+import { apiService } from './services/apiService';
 import {
   saveMeeting,
   getAllMeetings,
@@ -27,6 +29,15 @@ export function App() {
   const [sourceLang, setSourceLang] = useState('en');
   const [targetLang, setTargetLang] = useState('ar');
   const [generateSummary, setGenerateSummary] = useState(true);
+
+  // Active translation mode: 'basic' | 'smart' | 'unlimited'
+  const [activeMode, setActiveMode] = useState(() => {
+    try {
+      return localStorage.getItem('linguaflow_active_mode') || 'smart';
+    } catch {
+      return 'smart';
+    }
+  });
 
   // Live state
   const [isListening, setIsListening] = useState(false);
@@ -60,6 +71,19 @@ export function App() {
   const targetLangRef = useRef(targetLang);
   const settingsRef = useRef(settings);
   const entriesRef = useRef(entries);
+  const activeModeRef = useRef(activeMode);
+
+  useEffect(() => {
+    activeModeRef.current = activeMode;
+    try {
+      localStorage.setItem('linguaflow_active_mode', activeMode);
+    } catch {}
+  }, [activeMode]);
+
+  // Ping backend on mount to wake up Render free tier
+  useEffect(() => {
+    apiService.pingHealth();
+  }, []);
 
   useEffect(() => {
     sourceLangRef.current = sourceLang;
@@ -109,7 +133,7 @@ export function App() {
       if (!isFinal) {
         setInterimTranscript(transcript);
         // Fast speculative translation for interim text
-        translationEngine.translate(transcript, currentSrc, currentTgt).then((specTranslation) => {
+        translationEngine.translate(transcript, currentSrc, currentTgt, activeModeRef.current).then((specTranslation) => {
           setInterimTranslation(specTranslation);
         });
       } else {
@@ -133,7 +157,7 @@ export function App() {
 
         // Translate in background and update entry
         try {
-          const translatedText = await translationEngine.translate(transcript, currentSrc, currentTgt);
+          const translatedText = await translationEngine.translate(transcript, currentSrc, currentTgt, activeModeRef.current);
           setEntries((prev) =>
             prev.map((item) => (item.id === entryId ? { ...item, translatedText: translatedText } : item))
           );
@@ -220,7 +244,7 @@ export function App() {
 
     // Pick a phrase and translate it
     const randomPhrase = samplePhrases[entries.length % samplePhrases.length];
-    const translated = await translationEngine.translate(randomPhrase, sourceLang, targetLang);
+    const translated = await translationEngine.translate(randomPhrase, sourceLang, targetLang, activeModeRef.current);
 
     const simulatedEntry = {
       id: `sim-${Date.now()}`,
@@ -327,6 +351,14 @@ export function App() {
           generateSummary={generateSummary}
           onToggleSummary={setGenerateSummary}
           disabled={false}
+        />
+
+        {/* 3-Mode Selector (Basic, Smart, Unlimited) */}
+        <ModeSelector
+          activeMode={activeMode}
+          onSelectMode={setActiveMode}
+          onOpenAIGuide={() => setIsAIGuideOpen(true)}
+          isListening={isListening}
         />
 
         {/* Live Audio & Meeting Control Bar */}
