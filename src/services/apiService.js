@@ -105,7 +105,7 @@ class ApiService {
           translatedText: '',
           fallback: true,
           error: data.error || 'busy',
-          message: data.message || 'Smart mode is currently busy, switched to Basic.'
+          message: data.message || 'Shared Smart AI pool reached limit. Switched to Basic mode (lowest accuracy).'
         };
       }
 
@@ -120,7 +120,7 @@ class ApiService {
         translatedText: '',
         fallback: true,
         error: 'network',
-        message: 'Could not connect to Smart server, using Basic mode.'
+        message: 'Could not reach Smart AI server. Switched to Basic mode (lowest accuracy).'
       };
     }
   }

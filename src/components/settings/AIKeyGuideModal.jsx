@@ -121,7 +121,7 @@ export const AIKeyGuideModal = ({ isOpen, onClose, onSaveSuccess }) => {
                 No setup required if you prefer!
               </span>
               <p className="text-emerald-200/80 m-0 text-[11px] leading-relaxed">
-                You can always use <strong>🟢 Basic</strong> or <strong>⭐ Smart</strong> mode without setting up any keys. This step is only if you want <strong>♾️ Unlimited</strong> usage.
+                You can always use <strong>🟢 Basic</strong> (free, lowest accuracy) or <strong>⭐ Smart AI</strong> (high accuracy with shared daily quota). Setting up your own key gives you <strong>♾️ Unlimited</strong> usage with top accuracy and zero daily limits.
               </p>
             </div>
           </div>

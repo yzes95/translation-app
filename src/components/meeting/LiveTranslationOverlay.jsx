@@ -195,21 +195,21 @@ export const LiveTranslationOverlay = ({
           </div>
 
           {/* Active Mode / Model Indicator */}
-          <div className="hidden lg:flex items-center space-x-1.5 px-3 py-1 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold">
+          <div className="hidden sm:flex items-center space-x-1.5 px-3 py-1 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold">
             {activeMode === 'smart' ? (
-              <span className="text-amber-400 flex items-center space-x-1">
+              <span className="text-amber-400 flex items-center space-x-1" title="Shared AI quota — automatically switches back to Basic mode when quota depletes">
                 <span>⭐</span>
-                <span>Smart AI (Gemini Flash-Lite)</span>
+                <span>Smart AI (Shared Quota)</span>
               </span>
             ) : activeMode === 'unlimited' ? (
-              <span className="text-violet-400 flex items-center space-x-1">
+              <span className="text-violet-400 flex items-center space-x-1" title="Personal key — top accuracy with zero daily limits">
                 <span>♾️</span>
-                <span>Unlimited AI</span>
+                <span>Unlimited AI (Top Accuracy)</span>
               </span>
             ) : (
-              <span className="text-emerald-400 flex items-center space-x-1">
+              <span className="text-amber-300 flex items-center space-x-1" title="Basic mode uses literal translation with lowest accuracy">
                 <span>🟢</span>
-                <span>Basic Free</span>
+                <span>Basic (Lowest Accuracy)</span>
               </span>
             )}
           </div>

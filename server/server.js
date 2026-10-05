@@ -173,7 +173,7 @@ app.post('/api/translate', async (req, res) => {
       translatedText: '',
       fallback: true,
       error: 'quota_exceeded',
-      message: 'You have used your 30 minutes of Smart AI for today. Switched to Basic mode.'
+      message: 'Shared Smart AI daily quota reached (more online users = faster pool depletion). Switched to Basic mode (lowest accuracy).'
     });
   }
 
@@ -210,7 +210,7 @@ app.post('/api/translate', async (req, res) => {
       translatedText: '',
       fallback: true,
       error: 'server_not_configured',
-      message: 'Server AI keys not yet configured. Using Basic mode.'
+      message: 'Server AI keys not yet configured. Using Basic mode (lowest accuracy).'
     });
   }
 
@@ -251,14 +251,14 @@ app.post('/api/translate', async (req, res) => {
       translatedText: '',
       fallback: true,
       details: err.message,
-      message: 'Smart AI is busy or daily quota reached. Switched smoothly to Basic mode.'
+      message: 'Smart AI is busy or shared quota reached. Switched to Basic mode (lowest accuracy).'
     });
   }
 
   res.json({
     translatedText: '',
     fallback: true,
-    message: 'Smart AI unavailable. Switched smoothly to Basic mode.'
+    message: 'Smart AI unavailable. Switched to Basic mode (lowest accuracy).'
   });
 });
 
@@ -285,7 +285,7 @@ app.post('/api/translate-audio', express.json({ limit: '8mb' }), async (req, res
       translatedText: '',
       fallback: true,
       error: 'quota_exceeded',
-      message: 'You have used your 30 minutes of Smart AI for today.'
+      message: 'Shared Smart AI voice quota reached for today (more online users = faster pool depletion).'
     });
   }
 

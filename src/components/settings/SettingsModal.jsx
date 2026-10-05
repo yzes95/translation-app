@@ -158,17 +158,17 @@ export const SettingsModal = ({
                   }}
                   className="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500"
                 >
-                  <option value="default">Standard Free Mode (Zero-Setup - Recommended for Elders)</option>
+                  <option value="default">Basic Mode (Lowest Accuracy - Zero Setup)</option>
                   <option value="groq">Groq Llama 3.3 70B (Free Personal Key - Ultra Fast)</option>
                   <option value="gemini">Google Gemini 1.5 Flash (Free Personal Key - Slang Pro)</option>
                 </select>
               </div>
 
               {aiProvider === 'default' ? (
-                <div className="p-3 bg-emerald-950/20 rounded-xl border border-emerald-500/20 flex items-start space-x-2 text-xs text-emerald-300">
-                  <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+                <div className="p-3 bg-amber-950/20 rounded-xl border border-amber-500/30 flex items-start space-x-2 text-xs text-amber-300">
+                  <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
                   <p className="m-0 leading-relaxed text-[11px]">
-                    <strong>Standard Free Mode is active!</strong> Works automatically across all 9 languages (Arabic, English, Urdu, German, French, Hindi, Russian, Ukrainian, Turkish) with zero configuration or keys required.
+                    <strong>Basic Mode is active (Lowest Accuracy):</strong> Literal word-for-word translation without context or slang awareness. Always free and unlimited. For superior AI accuracy with slang and dialect comprehension, use Smart AI or enter a free personal key below.
                   </p>
                 </div>
               ) : (

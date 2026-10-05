@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, ShieldCheck, Infinity as InfinityIcon, Zap, Key, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Sparkles, ShieldCheck, Infinity as InfinityIcon, Zap, Key, RefreshCw, CheckCircle2, Info } from 'lucide-react';
 import { apiService } from '../../services/apiService';
 
 export const ModeSelector = ({
@@ -37,7 +37,7 @@ export const ModeSelector = ({
   }, []);
 
   return (
-    <div className="w-full space-y-2">
+    <div className="w-full space-y-2.5">
       <div className="flex items-center justify-between px-1">
         <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
           Select Translation Mode
@@ -69,7 +69,7 @@ export const ModeSelector = ({
           onClick={() => onSelectMode('basic')}
           className={`p-3.5 rounded-2xl border text-left transition-all relative ${
             activeMode === 'basic'
-              ? 'bg-emerald-950/20 border-emerald-500/60 shadow-lg shadow-emerald-500/5 ring-1 ring-emerald-500/40'
+              ? 'bg-amber-950/20 border-amber-500/60 shadow-lg shadow-amber-500/5 ring-1 ring-amber-500/40'
               : 'bg-slate-900/60 border-slate-800 hover:border-slate-700 text-slate-400'
           }`}
         >
@@ -78,12 +78,12 @@ export const ModeSelector = ({
               <span className="text-emerald-400">🟢</span>
               <span>Basic</span>
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-              Free Always
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+              Lowest Accuracy
             </span>
           </div>
           <p className="text-[11px] text-slate-400 m-0 leading-relaxed">
-            Zero setup, unlimited use. Works instantly across all 11 languages.
+            Literal word-for-word translation. Lacks slang and context. Unlimited & zero setup.
           </p>
         </button>
 
@@ -104,11 +104,11 @@ export const ModeSelector = ({
               <span>Smart AI</span>
             </div>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-              {usage.remainingMinutes}m left today
+              Shared Quota ({usage.remainingMinutes}m)
             </span>
           </div>
           <p className="text-[11px] text-slate-400 m-0 leading-relaxed">
-            High accuracy & slang understanding (Gemini 3.5 Flash-Lite). 30 min free daily.
+            High AI accuracy. Shared pool: more users = faster depletion, then auto-switches to Basic.
           </p>
         </button>
 
@@ -129,8 +129,8 @@ export const ModeSelector = ({
               <span>Unlimited</span>
             </div>
             {hasPersonalKey ? (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20 flex items-center space-x-1">
-                <span>Active</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center space-x-1">
+                <span>Active (Top)</span>
               </span>
             ) : (
               <button
@@ -141,14 +141,51 @@ export const ModeSelector = ({
                 }}
                 className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-600 hover:bg-violet-500 text-white transition-colors"
               >
-                Set up (2 min)
+                Free Key (2 min)
               </button>
             )}
           </div>
           <p className="text-[11px] text-slate-400 m-0 leading-relaxed">
-            Highest speed, no daily limits. Powered by your own free key.
+            Highest speed & top accuracy. Powered by your own free key. Never throttled or shared.
           </p>
         </button>
+      </div>
+
+      {/* Mode Accuracy & Shared Quota Transparency Notice */}
+      <div className="p-3 sm:p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 text-slate-300 text-xs space-y-2">
+        <div className="flex items-center space-x-1.5 font-semibold text-slate-200">
+          <Info className="w-4 h-4 text-indigo-400 shrink-0" />
+          <span>Understanding Translation Modes & Accuracy:</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] leading-relaxed">
+          <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
+            <div className="font-bold text-amber-300 flex items-center space-x-1">
+              <span>🟢</span>
+              <span>Basic (Lowest Accuracy)</span>
+            </div>
+            <p className="text-slate-400 m-0">
+              Literal word-for-word translation. Misses idioms, slang, and dialect nuances. Always free with no time limits.
+            </p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
+            <div className="font-bold text-indigo-300 flex items-center space-x-1">
+              <span>⭐</span>
+              <span>Smart AI (Shared Pool)</span>
+            </div>
+            <p className="text-slate-400 m-0">
+              High accuracy AI. Daily quota is shared across all active users: <strong className="text-slate-200">the more users online, the less time each has</strong> before falling back to Basic.
+            </p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
+            <div className="font-bold text-violet-300 flex items-center space-x-1">
+              <span>♾️</span>
+              <span>Unlimited (Top Accuracy)</span>
+            </div>
+            <p className="text-slate-400 m-0">
+              Connect your personal free Google Gemini or Groq key (2-min setup) for 100% uninterrupted, private top-tier AI translation.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Prominent, Warm Community Banner */}
