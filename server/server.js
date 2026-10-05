@@ -191,8 +191,15 @@ CRITICAL DIALECT RULES FOR ARABIC:
 Speech to translate:
 "${text}"`;
 
-  const candidateModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+  const candidateModels = [
+    'gemini-2.5-flash',
+    'gemini-flash-latest',
+    'gemini-2.5-pro',
+    'gemini-pro-latest',
+    'gemini-2.5-flash-lite'
+  ];
   let translatedText = '';
+  let modelUsed = '';
   let lastError = null;
 
   for (const model of candidateModels) {
@@ -223,11 +230,14 @@ Speech to translate:
       if (apiRes.ok) {
         const data = await apiRes.json();
         translatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-        if (translatedText) break; // Success!
+        if (translatedText) {
+          modelUsed = model;
+          break; // Success!
+        }
       } else {
         const errBody = await apiRes.text().catch(() => '');
         console.warn(`Gemini model ${model} returned ${apiRes.status}:`, errBody);
-        lastError = `Status ${apiRes.status}: ${errBody}`;
+        lastError = `Status ${apiRes.status} (${model}): ${errBody}`;
       }
     } catch (e) {
       lastError = e.message;
@@ -241,6 +251,7 @@ Speech to translate:
 
     return res.json({
       translatedText,
+      modelUsed,
       remainingMinutes: Math.round((remainingSeconds / 60) * 10) / 10
     });
   }

@@ -104,17 +104,47 @@ export const LiveTranslationOverlay = ({
   // Audio wave visualizer bars
   const bars = [0.4, 0.7, 1.0, 0.8, 1.2, 0.9, 0.6, 0.3];
 
-  // Proportional font sizes: 1:3 scale for previous/old, 2:3 scale for active/new
-  const oldFontClasses = {
-    normal: 'text-xl sm:text-2xl md:text-3xl lg:text-4xl',
-    large: 'text-2xl sm:text-3xl md:text-4xl lg:text-5xl',
-    huge: 'text-3xl sm:text-4xl md:text-5xl lg:text-6xl'
+  // Dynamic scaling: gradually step down font size as text length grows so it always fits without overflowing
+  const getDynamicNewFontSize = (text, sizePref) => {
+    const len = (text || '').length;
+    if (sizePref === 'huge') {
+      if (len > 150) return 'text-xl sm:text-2xl md:text-3xl lg:text-4xl';
+      if (len > 100) return 'text-2xl sm:text-3xl md:text-4xl lg:text-5xl';
+      if (len > 60)  return 'text-3xl sm:text-5xl md:text-6xl lg:text-7xl';
+      if (len > 30)  return 'text-4xl sm:text-6xl md:text-7xl lg:text-8xl';
+      return 'text-5xl sm:text-7xl md:text-8xl lg:text-9xl xl:text-[10rem]';
+    }
+    if (sizePref === 'normal') {
+      if (len > 150) return 'text-base sm:text-lg md:text-xl lg:text-2xl';
+      if (len > 100) return 'text-lg sm:text-xl md:text-2xl lg:text-3xl';
+      if (len > 60)  return 'text-xl sm:text-2xl md:text-3xl lg:text-4xl';
+      if (len > 30)  return 'text-2xl sm:text-3xl md:text-4xl lg:text-5xl';
+      return 'text-3xl sm:text-5xl md:text-6xl lg:text-7xl';
+    }
+    // Default 'large'
+    if (len > 150) return 'text-lg sm:text-xl md:text-2xl lg:text-3xl';
+    if (len > 100) return 'text-xl sm:text-2xl md:text-3xl lg:text-4xl';
+    if (len > 60)  return 'text-2xl sm:text-4xl md:text-5xl lg:text-6xl';
+    if (len > 30)  return 'text-3xl sm:text-5xl md:text-6xl lg:text-7xl';
+    return 'text-4xl sm:text-6xl md:text-7xl lg:text-8xl xl:text-9xl';
   };
 
-  const newFontClasses = {
-    normal: 'text-4xl sm:text-6xl md:text-7xl lg:text-8xl',
-    large: 'text-5xl sm:text-7xl md:text-8xl lg:text-9xl',
-    huge: 'text-6xl sm:text-8xl md:text-9xl lg:text-[10rem]'
+  const getDynamicOldFontSize = (text, sizePref) => {
+    const len = (text || '').length;
+    if (sizePref === 'huge') {
+      if (len > 120) return 'text-base sm:text-lg md:text-xl';
+      if (len > 70)  return 'text-lg sm:text-xl md:text-2xl';
+      return 'text-xl sm:text-2xl md:text-3xl lg:text-4xl';
+    }
+    if (sizePref === 'normal') {
+      if (len > 120) return 'text-xs sm:text-sm md:text-base';
+      if (len > 70)  return 'text-sm sm:text-base md:text-lg';
+      return 'text-base sm:text-lg md:text-xl lg:text-2xl';
+    }
+    // Default 'large'
+    if (len > 120) return 'text-sm sm:text-base md:text-lg';
+    if (len > 70)  return 'text-base sm:text-lg md:text-xl';
+    return 'text-lg sm:text-xl md:text-2xl lg:text-3xl';
   };
 
   return (
@@ -261,7 +291,7 @@ export const LiveTranslationOverlay = ({
               <div className="w-full max-w-5xl mx-auto space-y-2">
                 <div
                   dir={isTargetRTL ? 'rtl' : 'ltr'}
-                  className={`${oldFontClasses[subtitleSize]} text-slate-400 font-semibold opacity-70 tracking-tight leading-snug transition-all duration-200`}
+                  className={`${getDynamicOldFontSize(previousTranslation, subtitleSize)} text-slate-400 font-semibold opacity-70 tracking-tight leading-snug transition-all duration-200`}
                 >
                   {previousTranslation}
                 </div>
@@ -304,7 +334,7 @@ export const LiveTranslationOverlay = ({
                 <div>
                   <div
                     dir={isTargetRTL ? 'rtl' : 'ltr'}
-                    className={`${newFontClasses[subtitleSize]} font-black text-white tracking-tight leading-tight drop-shadow-2xl transition-all duration-150`}
+                    className={`${getDynamicNewFontSize(activeTranslation, subtitleSize)} font-black text-white tracking-tight leading-tight drop-shadow-2xl transition-all duration-150`}
                   >
                     {activeTranslation}
                   </div>

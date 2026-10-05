@@ -133,6 +133,36 @@ export const SUPPORTED_LANGUAGES = [
       'Müşteri canlı çeviri ve toplantı özeti özelliğinden çok memnun kaldı.',
       'Toplantıyı bitirmeden önce görev dağılımını netleştirelim.'
     ]
+  },
+  {
+    code: 'pcm',
+    name: 'Nigerian Pidgin',
+    nativeName: 'Naijá / Pidgin',
+    flag: '🇳🇬',
+    speechCode: 'en-NG',
+    speechCodesFallback: ['en-NG', 'en-GB'],
+    rtl: false,
+    samplePhrases: [
+      'Good morning everybody, make we look wetin we get to do today.',
+      'We must finish this work before Friday come reach.',
+      'The client talk say the translation dey work well well.',
+      'Make we share the task give everybody before we close meeting.'
+    ]
+  },
+  {
+    code: 'yo',
+    name: 'Yoruba',
+    nativeName: 'Èdè Yorùbá',
+    flag: '🇳🇬',
+    speechCode: 'yo-NG',
+    speechCodesFallback: ['yo-NG', 'en-NG'],
+    rtl: false,
+    samplePhrases: [
+      'Ẹ ku owurọ gbogbo eniyan, ẹ jẹ ki a bẹrẹ eto ipade wa.',
+      'A nilo lati pari iṣẹ akanṣe yii ṣaaju ọjọ Jimọ.',
+      'Onibara fẹran ẹrọ itumọ ede yii pupọ.',
+      'Ẹ jẹ ki a pin awọn iṣẹ ṣaaju ki a pari ipade.'
+    ]
   }
 ];
 
