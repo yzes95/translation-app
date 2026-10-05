@@ -91,6 +91,15 @@ function getUserUsage(userId) {
   return record;
 }
 
+const APP_BUILD_VERSION = '2026.10.05.v3';
+
+// Server-side fast cache for identical queries (saves Gemini quota)
+const serverCache = new Map();
+const CACHE_MAX_ITEMS = 600;
+
+// Per-user request throttling (prevents accidental speech spam from exceeding 15 RPM)
+const userLastRequest = new Map();
+
 // -------------------------------------------------------------
 // 0. Root Status Endpoint
 // -------------------------------------------------------------
@@ -98,7 +107,7 @@ app.get('/', (req, res) => {
   res.json({
     status: 'online',
     name: 'LinguaFlow API Backend',
-    version: '1.0.0',
+    version: APP_BUILD_VERSION,
     uptime: process.uptime(),
     geminiConfigured: !!process.env.GEMINI_API_KEY,
     stripeConfigured: !!stripe
@@ -106,11 +115,12 @@ app.get('/', (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 1. Health Check (Used by PWA for warming-up detection)
+// 1. Health Check (Used by PWA for warming-up detection & version verify)
 // -------------------------------------------------------------
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
+    version: APP_BUILD_VERSION,
     uptime: process.uptime(),
     timestamp: Date.now(),
     geminiConfigured: !!process.env.GEMINI_API_KEY,
@@ -137,6 +147,7 @@ app.get('/api/usage', (req, res) => {
 
 
 // -------------------------------------------------------------
+// -------------------------------------------------------------
 // 3. Smart Mode AI Translation (Shared Gemini Key with limits)
 // -------------------------------------------------------------
 app.post('/api/translate', async (req, res) => {
@@ -147,27 +158,54 @@ app.post('/api/translate', async (req, res) => {
     return res.json({ translatedText: '' });
   }
 
+  const cleanText = text.trim();
+
   // 1. Check daily quota
   const usage = getUserUsage(userId);
   if (usage.usedSeconds >= DAILY_LIMIT_SECONDS) {
-    return res.status(429).json({
-      error: 'quota_exceeded',
+    return res.json({
+      translatedText: '',
       fallback: true,
+      error: 'quota_exceeded',
       message: 'You have used your 30 minutes of Smart AI for today. Switched to Basic mode.'
     });
   }
 
-  // 2. Check if server Gemini key is configured
+  // 2. Per-user Throttling (gracefully smooths fast speech without 429)
+  const now = Date.now();
+  const lastTime = userLastRequest.get(userId) || 0;
+  if (now - lastTime < 800) {
+    return res.json({
+      translatedText: '',
+      fallback: true,
+      rateLimited: true,
+      message: 'Fast speaking pace detected. Using instant Basic translation.'
+    });
+  }
+  userLastRequest.set(userId, now);
+
+  // 3. Server-side Query Cache (saves Gemini API calls)
+  const cacheKey = `${sourceLang}|${targetLang}|${cleanText.toLowerCase()}`;
+  if (serverCache.has(cacheKey)) {
+    return res.json({
+      translatedText: serverCache.get(cacheKey),
+      modelUsed: 'gemini-3.5-flash-lite (cache)',
+      remainingMinutes: Math.round(((DAILY_LIMIT_SECONDS - usage.usedSeconds) / 60) * 10) / 10
+    });
+  }
+
+  // 4. Check if server Gemini key is configured
   const geminiKey = (process.env.GEMINI_API_KEY || '').trim().replace(/^["']|["']$/g, '');
   if (!geminiKey) {
-    return res.status(503).json({
-      error: 'server_not_configured',
+    return res.json({
+      translatedText: '',
       fallback: true,
+      error: 'server_not_configured',
       message: 'Server AI key not yet configured. Using Basic mode.'
     });
   }
 
-  // 3. Translate using Gemini with multi-model fallback & dialect awareness
+  // 5. Translate using Gemini with multi-model fallback & dialect awareness
   const languageNames = {
     en: 'English',
     ar: 'Arabic',
@@ -211,14 +249,12 @@ Rules:
 2. Output ONLY the translated text in ${tgtName} without quotation marks, markdown formatting, dialect labels, or explanations.
 
 Speech to translate:
-"${text}"`;
+"${cleanText}"`;
 
+  // Focus only on active models supported on the project
   const candidateModels = [
     'gemini-3.5-flash-lite',
-    'gemini-3.5-flash',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash'
+    'gemini-3.5-flash'
   ];
   let translatedText = '';
   let modelUsed = '';
@@ -267,6 +303,13 @@ Speech to translate:
   }
 
   if (translatedText) {
+    // Save to server fast cache
+    if (serverCache.size >= CACHE_MAX_ITEMS) {
+      const firstKey = serverCache.keys().next().value;
+      serverCache.delete(firstKey);
+    }
+    serverCache.set(cacheKey, translatedText);
+
     // Record time usage
     usage.usedSeconds += Math.min(10, sessionDurationSeconds);
     const remainingSeconds = Math.max(0, DAILY_LIMIT_SECONDS - usage.usedSeconds);
@@ -278,12 +321,12 @@ Speech to translate:
     });
   }
 
-  console.warn('All Gemini models failed, falling back to basic:', lastError);
-  res.status(502).json({
-    error: 'translation_failed',
+  console.warn('Gemini models unavailable/rate-limited, falling back to basic:', lastError);
+  res.json({
+    translatedText: '',
     fallback: true,
     details: lastError,
-    message: 'Smart mode temporary hiccup, falling back to Basic.'
+    message: 'Smart AI rate limit reached. Switched smoothly to Basic mode.'
   });
 });
 
@@ -300,7 +343,7 @@ app.post('/api/summary', async (req, res) => {
 
   try {
     const transcriptText = entries.map((e) => `${e.speaker}: ${e.text}`).join('\n');
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${geminiKey}`;
 
     const prompt = `You are a meeting assistant. Summarize the following meeting transcript into JSON format with keys:
 "executiveOverview" (1-2 sentences),

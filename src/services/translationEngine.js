@@ -240,6 +240,10 @@ export class TranslationEngine {
           }
           cache.set(cacheKey, smartRes.translatedText);
           return smartRes.translatedText;
+        } else if (smartRes?.fallback) {
+          if (this.onFallbackNotice && smartRes.message) {
+            this.onFallbackNotice(smartRes.message);
+          }
         }
       } catch (err) {
         console.warn('Smart mode call failed, falling back to basic:', err);

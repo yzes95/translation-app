@@ -111,6 +111,7 @@ class ApiService {
 
       return {
         translatedText: data.translatedText,
+        modelUsed: data.modelUsed,
         fallback: false,
         remainingMinutes: data.remainingMinutes
       };

@@ -199,7 +199,7 @@ export const LiveTranslationOverlay = ({
             {activeMode === 'smart' ? (
               <span className="text-amber-400 flex items-center space-x-1">
                 <span>⭐</span>
-                <span>Smart AI (Gemini Pro)</span>
+                <span>Smart AI (Gemini Flash-Lite)</span>
               </span>
             ) : activeMode === 'unlimited' ? (
               <span className="text-violet-400 flex items-center space-x-1">

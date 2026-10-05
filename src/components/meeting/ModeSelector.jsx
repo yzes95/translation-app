@@ -54,7 +54,7 @@ export const ModeSelector = ({
             ) : serverStatus === 'ready' ? (
               <span className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
                 <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                <span>Gemini Pro Key (Ready)</span>
+                <span>Gemini Flash-Lite (Ready)</span>
               </span>
             ) : null}
           </div>
@@ -108,7 +108,7 @@ export const ModeSelector = ({
             </span>
           </div>
           <p className="text-[11px] text-slate-400 m-0 leading-relaxed">
-            High accuracy & slang understanding (Gemini 2.5 Flash / Flash Lite). 30 min free daily.
+            High accuracy & slang understanding (Gemini 3.5 Flash-Lite). 30 min free daily.
           </p>
         </button>
 

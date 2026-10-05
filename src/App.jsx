@@ -58,6 +58,7 @@ export function App() {
   const [isAIGuideOpen, setIsAIGuideOpen] = useState(false);
   const [pastMeetings, setPastMeetings] = useState([]);
   const [tipNotification, setTipNotification] = useState(null);
+  const [fallbackNotice, setFallbackNotice] = useState(null);
 
   // Settings
   const [settings, setSettings] = useState({
@@ -140,8 +141,13 @@ export function App() {
     setPastMeetings(list);
   };
 
-  // Setup SpeechService callbacks once on mount
+  // Setup SpeechService and Translation callbacks once on mount
   useEffect(() => {
+    translationEngine.onFallbackNotice = (msg) => {
+      setFallbackNotice(msg);
+      setTimeout(() => setFallbackNotice(null), 5000);
+    };
+
     speechService.onStatusChange = (status) => {
       setIsListening(status === 'listening');
     };
@@ -536,6 +542,20 @@ export function App() {
               Continue to LinguaFlow
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Smart Mode Fallback Notification Toast */}
+      {fallbackNotice && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs sm:text-sm font-semibold shadow-xl backdrop-blur-md flex items-center space-x-2 animate-fadeIn max-w-[90vw]">
+          <span>⚡</span>
+          <span>{fallbackNotice}</span>
+          <button
+            onClick={() => setFallbackNotice(null)}
+            className="text-amber-400 hover:text-white ml-2 text-xs font-bold cursor-pointer"
+          >
+            ✕
+          </button>
         </div>
       )}
     </div>
