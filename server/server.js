@@ -72,8 +72,9 @@ app.post(
   }
 );
 
-// Body parser for all other JSON routes
-app.use(express.json());
+// Body parser for all other JSON routes (allow up to 25MB for voice audio chunks)
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
 // -------------------------------------------------------------
 // In-Memory Quota & Usage Store (Daily 30 min per user)
@@ -265,7 +266,7 @@ app.post('/api/translate', async (req, res) => {
 // -------------------------------------------------------------
 // 3.5 Yoruba Audio Translation (Gemini 1st -> Groq 2nd -> Cloudflare 3rd)
 // -------------------------------------------------------------
-app.post('/api/translate-audio', express.json({ limit: '8mb' }), async (req, res) => {
+app.post('/api/translate-audio', express.json({ limit: '25mb' }), async (req, res) => {
   const { audioBase64, mimeType = 'audio/webm', sourceLang, targetLang, sessionDurationSeconds = 3 } = req.body;
   const userId = req.headers['x-user-id'] || req.body.userId || req.ip;
 
@@ -304,8 +305,8 @@ app.post('/api/translate-audio', express.json({ limit: '8mb' }), async (req, res
   userLastRequest.set(userId, now);
 
   const buffer = Buffer.from(audioBase64, 'base64');
-  if (buffer.length > 5 * 1024 * 1024) {
-    return res.status(400).json({ error: 'Audio payload too large (max 5MB)' });
+  if (buffer.length > 20 * 1024 * 1024) {
+    return res.status(400).json({ error: 'Audio payload too large (max 20MB)' });
   }
 
   const tgtName = LANGUAGE_NAMES[targetLang] || targetLang || 'English';

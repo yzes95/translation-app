@@ -159,8 +159,26 @@ class ApiService {
         })
       });
 
+      if (!res.ok) {
+        let errMsg = 'Yoruba voice translation server error.';
+        try {
+          const errData = await res.json();
+          errMsg = errData.message || errMsg;
+        } catch (_) {
+          if (res.status === 413) {
+            errMsg = 'Audio clip too large. Speak in shorter phrases.';
+          }
+        }
+        return {
+          transcript: '',
+          translatedText: '',
+          fallback: true,
+          message: errMsg
+        };
+      }
+
       const data = await res.json();
-      if (!res.ok || data.fallback) {
+      if (data.fallback) {
         return {
           transcript: '',
           translatedText: '',

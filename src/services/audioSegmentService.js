@@ -97,6 +97,12 @@ class AudioSegmentService {
             clearTimeout(this.silenceTimer);
             this.silenceTimer = null;
           }
+
+          // Safety auto-flush: If continuous speech exceeds 6 seconds, flush segment so sentences are translated in real-time and payload stays tiny
+          const elapsed = Date.now() - this.segmentStartTime;
+          if (elapsed >= 6000 && this.isListening) {
+            this.flush();
+          }
         } else if (this.speechDetected && !this.silenceTimer) {
           // Speech was active, now silent: start silence countdown
           this.silenceTimer = setTimeout(() => {
@@ -120,7 +126,12 @@ class AudioSegmentService {
     this.segmentStartTime = Date.now();
 
     try {
-      const options = this.mimeType ? { mimeType: this.mimeType } : {};
+      const options = {
+        audioBitsPerSecond: 32000
+      };
+      if (this.mimeType) {
+        options.mimeType = this.mimeType;
+      }
       this.mediaRecorder = new MediaRecorder(this.stream, options);
 
       this.mediaRecorder.ondataavailable = (e) => {
