@@ -166,7 +166,6 @@ export function App() {
 
     speechService.onResult = async ({ transcript, isFinal }) => {
       if (!transcript || !transcript.trim()) return;
-      if (!isListeningRef.current) return;
       const currentSession = sessionIdRef.current;
       const currentSrc = sourceLangRef.current;
       const currentTgt = targetLangRef.current;
@@ -206,13 +205,13 @@ export function App() {
           translatedText: ''
         };
 
-        if (!isListeningRef.current || sessionIdRef.current !== currentSession) return;
+        if (sessionIdRef.current !== currentSession) return;
         setEntries((prev) => [...prev, initialEntry]);
 
         // Translate in background and update entry
         try {
           const translatedText = await translationEngine.translate(transcript, currentSrc, currentTgt, activeModeRef.current);
-          if (isListeningRef.current && sessionIdRef.current === currentSession) {
+          if (sessionIdRef.current === currentSession) {
             setEntries((prev) =>
               prev.map((item) => (item.id === entryId ? { ...item, translatedText: translatedText } : item))
             );
