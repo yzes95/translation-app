@@ -223,6 +223,13 @@ export function App() {
 
   // Controls
   const handleStartListening = () => {
+    // If starting a new session after stopping, clear previous entries so user gets a fresh screen
+    if (!isListening && entries.length > 0) {
+      setEntries([]);
+      setInterimTranscript('');
+      setInterimTranslation('');
+      setMeetingDuration(0);
+    }
     speechService.start(sourceLang);
   };
 
@@ -422,8 +429,20 @@ export function App() {
         <SummaryModal
           summary={activeSummary}
           targetLang={targetLang}
-          onClose={() => setActiveSummary(null)}
-          onSaveToHistory={() => loadMeetings()}
+          onClose={() => {
+            setActiveSummary(null);
+            setEntries([]);
+            setInterimTranscript('');
+            setInterimTranslation('');
+            setMeetingDuration(0);
+          }}
+          onSaveToHistory={() => {
+            loadMeetings();
+            setEntries([]);
+            setInterimTranscript('');
+            setInterimTranslation('');
+            setMeetingDuration(0);
+          }}
         />
       )}
 

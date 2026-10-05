@@ -156,7 +156,7 @@ app.post('/api/translate', async (req, res) => {
   }
 
   // 2. Check if server Gemini key is configured
-  const geminiKey = process.env.GEMINI_API_KEY;
+  const geminiKey = (process.env.GEMINI_API_KEY || '').trim().replace(/^["']|["']$/g, '');
   if (!geminiKey) {
     return res.status(503).json({
       error: 'server_not_configured',
@@ -165,56 +165,79 @@ app.post('/api/translate', async (req, res) => {
     });
   }
 
-  // 3. Translate using Gemini 1.5 Flash
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
-    const prompt = `You are a live simultaneous meeting interpreter. Translate conversational speech from ${sourceLang} to ${targetLang}. Accurately understand colloquial dialect idioms (such as Egyptian Arabic slang). Output ONLY the translated sentence without quotes or explanations.\n\nSpeech:\n${text}`;
+  // 3. Translate using Gemini with multi-model fallback & dialect awareness
+  const prompt = `You are an expert simultaneous conference interpreter specializing in spoken Arabic dialects, particularly Egyptian, Levantine, and Gulf Arabic.
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+CRITICAL DIALECT RULES FOR ARABIC:
+1. In conversational Egyptian Arabic, the word "نص" and the phrase "في النص" almost always mean "in the middle" (e.g. "in the middle of my speech", "halfway through", "halfway in the sentence"), NOT "in the text".
+2. Understand colloquial expressions: "شغال" = "working / running", "بيقطع" = "cutting off / interrupting", "كده" = "like this", "مش" = "not", "عايز" = "want", "طلع" = "appeared / showed".
+3. Translate conversational spoken speech naturally and accurately into ${targetLang}.
+4. Output ONLY the translated sentence without quotation marks, markdown, or explanations.
 
-    const apiRes = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }]
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
+Speech to translate:
+"${text}"`;
 
-    if (apiRes.status === 429) {
-      return res.status(429).json({
-        error: 'capacity_busy',
-        fallback: true,
-        message: 'Smart mode is busy right now, so we switched you to Basic.'
+  const candidateModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+  let translatedText = '';
+  let lastError = null;
+
+  for (const model of candidateModels) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6500);
+
+      const apiRes = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 256
+          }
+        }),
+        signal: controller.signal
       });
+      clearTimeout(timeout);
+
+      if (apiRes.status === 429) {
+        lastError = 'Rate limit reached';
+        continue;
+      }
+
+      if (apiRes.ok) {
+        const data = await apiRes.json();
+        translatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+        if (translatedText) break; // Success!
+      } else {
+        const errBody = await apiRes.text().catch(() => '');
+        console.warn(`Gemini model ${model} returned ${apiRes.status}:`, errBody);
+        lastError = `Status ${apiRes.status}: ${errBody}`;
+      }
+    } catch (e) {
+      lastError = e.message;
     }
+  }
 
-    if (!apiRes.ok) {
-      throw new Error(`Gemini API returned status ${apiRes.status}`);
-    }
-
-    const data = await apiRes.json();
-    const translatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-
+  if (translatedText) {
     // Record time usage
     usage.usedSeconds += Math.min(10, sessionDurationSeconds);
-
     const remainingSeconds = Math.max(0, DAILY_LIMIT_SECONDS - usage.usedSeconds);
 
-    res.json({
+    return res.json({
       translatedText,
       remainingMinutes: Math.round((remainingSeconds / 60) * 10) / 10
     });
-  } catch (err) {
-    console.warn('Smart mode Gemini call failed:', err.message);
-    res.status(502).json({
-      error: 'translation_failed',
-      fallback: true,
-      message: 'Smart mode temporary hiccup, falling back to Basic.'
-    });
   }
+
+  console.warn('All Gemini models failed, falling back to basic:', lastError);
+  res.status(502).json({
+    error: 'translation_failed',
+    fallback: true,
+    details: lastError,
+    message: 'Smart mode temporary hiccup, falling back to Basic.'
+  });
 });
 
 // -------------------------------------------------------------

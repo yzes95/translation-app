@@ -259,11 +259,21 @@ class SpeechService {
       this.silenceTimer = null;
     }
 
-    if (!this.accumulatedSentence || !this.accumulatedSentence.trim()) return;
+    // Combine any finalized words and actively streaming interim words
+    const sentenceToCommit = (this.accumulatedSentence + ' ' + (this.lastInterim || '')).trim();
+    if (!sentenceToCommit) return;
 
-    const sentenceToCommit = this.accumulatedSentence.trim();
     this.accumulatedSentence = '';
     this.lastInterim = '';
+
+    // Abort active recognition briefly so the browser flushes its internal speech buffers
+    if (this.recognition) {
+      try {
+        this.recognition.abort();
+      } catch (e) {
+        // ignore
+      }
+    }
 
     if (this.onResult) {
       this.onResult({
