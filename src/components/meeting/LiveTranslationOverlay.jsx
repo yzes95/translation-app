@@ -104,11 +104,17 @@ export const LiveTranslationOverlay = ({
   // Audio wave visualizer bars
   const bars = [0.4, 0.7, 1.0, 0.8, 1.2, 0.9, 0.6, 0.3];
 
-  // Font size classes
-  const fontClasses = {
-    normal: 'text-2xl sm:text-3xl md:text-4xl',
-    large: 'text-3xl sm:text-4xl md:text-5xl lg:text-6xl',
-    huge: 'text-4xl sm:text-5xl md:text-6xl lg:text-7xl'
+  // Proportional font sizes: 1:3 scale for previous/old, 2:3 scale for active/new
+  const oldFontClasses = {
+    normal: 'text-xl sm:text-2xl md:text-3xl lg:text-4xl',
+    large: 'text-2xl sm:text-3xl md:text-4xl lg:text-5xl',
+    huge: 'text-3xl sm:text-4xl md:text-5xl lg:text-6xl'
+  };
+
+  const newFontClasses = {
+    normal: 'text-4xl sm:text-6xl md:text-7xl lg:text-8xl',
+    large: 'text-5xl sm:text-7xl md:text-8xl lg:text-9xl',
+    huge: 'text-6xl sm:text-8xl md:text-9xl lg:text-[10rem]'
   };
 
   return (
@@ -242,72 +248,96 @@ export const LiveTranslationOverlay = ({
         </div>
       </header>
 
-      {/* 2. Main Stage: Cinema Subtitle View (Default) */}
+      {/* 2. Main Stage: Cinema Subtitle View (1:3 for Old, 2:3 for New) */}
       {viewMode === 'subtitles' ? (
-        <main className="flex-1 flex flex-col justify-center items-center px-6 sm:px-12 md:px-20 max-w-6xl w-full mx-auto text-center space-y-6 sm:space-y-8 overflow-hidden">
-          {/* Previous Sentence (Softly Faded Above for Context) */}
-          {previousTranslation && (
-            <div
-              dir={isTargetRTL ? 'rtl' : 'ltr'}
-              className="text-lg sm:text-xl md:text-2xl text-slate-500 font-medium opacity-40 transition-all max-w-4xl leading-relaxed"
-            >
-              <span>{previousTranslation}</span>
-              {showOriginal && previousOriginal && (
+        <main className="flex-1 flex flex-col w-full h-full overflow-hidden select-none">
+          {/* Top 1/3: Old / Previous Sentence (1/3 Screen Height, 1/3 Text Scale) */}
+          <section className="basis-1/3 h-1/3 min-h-[30%] max-h-[35%] w-full border-b border-slate-900/80 bg-slate-950/70 flex flex-col justify-center items-center px-6 sm:px-12 md:px-20 text-center relative overflow-y-auto">
+            <span className="absolute top-2 left-4 sm:left-8 text-[10px] tracking-widest font-mono text-slate-600 uppercase select-none">
+              Previous
+            </span>
+
+            {previousTranslation ? (
+              <div className="w-full max-w-5xl mx-auto space-y-2">
                 <div
-                  dir={isSourceRTL ? 'rtl' : 'ltr'}
-                  className="text-xs sm:text-sm text-slate-600 mt-1 opacity-75 font-normal"
+                  dir={isTargetRTL ? 'rtl' : 'ltr'}
+                  className={`${oldFontClasses[subtitleSize]} text-slate-400 font-semibold opacity-70 tracking-tight leading-snug transition-all duration-200`}
                 >
-                  {previousOriginal}
+                  {previousTranslation}
+                </div>
+                {showOriginal && previousOriginal && (
+                  <div
+                    dir={isSourceRTL ? 'rtl' : 'ltr'}
+                    className="text-xs sm:text-base text-slate-500 font-normal opacity-70 max-w-3xl mx-auto"
+                  >
+                    <span className="text-[10px] uppercase tracking-wider text-slate-600 mr-2">
+                      Original:
+                    </span>
+                    {previousOriginal}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-slate-600/70 text-xs sm:text-sm tracking-wider font-mono uppercase">
+                Previous sentence will appear here
+              </div>
+            )}
+          </section>
+
+          {/* Bottom 2/3: New / Active Translation (2/3 Screen Height, 2/3 Massive Text Scale) */}
+          <section className="basis-2/3 h-2/3 flex-1 w-full bg-black flex flex-col justify-center items-center px-6 sm:px-12 md:px-20 text-center relative overflow-y-auto">
+            <span className="absolute top-3 left-4 sm:left-8 text-[10px] tracking-widest font-mono text-blue-500/80 uppercase select-none flex items-center space-x-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+              <span>Current</span>
+            </span>
+
+            {/* Speaking Now Badge */}
+            {isSpeakingNow && (
+              <div className="absolute top-3 right-4 sm:right-8 flex items-center space-x-2 px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-semibold animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
+                <span>Speaking now...</span>
+              </div>
+            )}
+
+            <div className="w-full max-w-6xl mx-auto space-y-4">
+              {activeTranslation ? (
+                <div>
+                  <div
+                    dir={isTargetRTL ? 'rtl' : 'ltr'}
+                    className={`${newFontClasses[subtitleSize]} font-black text-white tracking-tight leading-tight drop-shadow-2xl transition-all duration-150`}
+                  >
+                    {activeTranslation}
+                  </div>
+
+                  {/* Optional Original Spoken Text (Hidden by default, shown only if toggled ON) */}
+                  {showOriginal && activeOriginal && (
+                    <div
+                      dir={isSourceRTL ? 'rtl' : 'ltr'}
+                      className="text-lg sm:text-2xl md:text-3xl text-slate-400 font-medium max-w-4xl mx-auto pt-3 opacity-80"
+                    >
+                      <span className="text-slate-500 text-xs uppercase tracking-wider block mb-1">
+                        Original ({sourceLangInfo.name}):
+                      </span>
+                      <span>{activeOriginal}</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Idle / Listening prompt */
+                <div className="space-y-4 py-8">
+                  <div className="w-20 h-20 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 mx-auto flex items-center justify-center text-4xl animate-pulse">
+                    🎙️
+                  </div>
+                  <h2 className="text-2xl sm:text-4xl font-bold text-slate-200">
+                    Listening in {sourceLangInfo.name}...
+                  </h2>
+                  <p className="text-base sm:text-lg text-slate-500 max-w-lg mx-auto">
+                    Live translation in {targetLangInfo.name} will appear here in cinema scale.
+                  </p>
                 </div>
               )}
             </div>
-          )}
-
-          {/* Active / Current Translation (Giant, Cinema-Scale Typography) */}
-          <div className="w-full space-y-4">
-            {activeTranslation ? (
-              <div
-                dir={isTargetRTL ? 'rtl' : 'ltr'}
-                className={`${fontClasses[subtitleSize]} font-extrabold text-white tracking-tight leading-snug drop-shadow-md transition-all duration-150`}
-              >
-                {activeTranslation}
-              </div>
-            ) : (
-              /* Idle / Listening prompt */
-              <div className="space-y-3 py-8">
-                <div className="w-16 h-16 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 mx-auto flex items-center justify-center text-3xl animate-pulse">
-                  🎙️
-                </div>
-                <h2 className="text-xl sm:text-2xl font-bold text-slate-300">
-                  Listening in {sourceLangInfo.name}...
-                </h2>
-                <p className="text-sm text-slate-500 max-w-md mx-auto">
-                  Subtitles will appear in {targetLangInfo.name} in giant text on this screen.
-                </p>
-              </div>
-            )}
-
-            {/* Optional Original Spoken Text (Hidden by default, shown only if toggled ON) */}
-            {showOriginal && activeOriginal && (
-              <div
-                dir={isSourceRTL ? 'rtl' : 'ltr'}
-                className="text-base sm:text-xl md:text-2xl text-slate-400 font-medium max-w-4xl mx-auto pt-2 opacity-80"
-              >
-                <span className="text-slate-500 text-xs uppercase tracking-wider block mb-1">
-                  Original ({sourceLangInfo.name}):
-                </span>
-                <span>{activeOriginal}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Live speaking badge if voice is currently streaming */}
-          {isSpeakingNow && (
-            <div className="flex items-center space-x-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-semibold animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
-              <span>Speaking now...</span>
-            </div>
-          )}
+          </section>
         </main>
       ) : (
         /* Alternate: Full Transcript List View */
