@@ -10,6 +10,7 @@ import { InstallModal } from './components/install/InstallModal';
 import { SupportModal } from './components/support/SupportModal';
 import { AIKeyGuideModal } from './components/settings/AIKeyGuideModal';
 import { ModeSelector } from './components/meeting/ModeSelector';
+import { LiveTranslationOverlay } from './components/meeting/LiveTranslationOverlay';
 
 import { speechService } from './services/speechService';
 import { translationEngine } from './services/translationEngine';
@@ -431,6 +432,27 @@ export function App() {
       <SupportModal
         isOpen={isSupportOpen}
         onClose={() => setIsSupportOpen(false)}
+      />
+
+      {/* Full-Screen Immersive Live Translation Overlay */}
+      <LiveTranslationOverlay
+        isOpen={isListening}
+        onExit={handleStopListening}
+        entries={entries}
+        interimTranscript={interimTranscript}
+        interimTranslation={interimTranslation}
+        sourceLang={sourceLang}
+        targetLang={targetLang}
+        volumeLevel={volumeLevel}
+        meetingDuration={meetingDuration}
+        onFinishSentence={() => speechService.forceCommit()}
+        onProduceSummary={handleProduceSummary}
+        isSummarizing={isSummarizing}
+        generateSummary={generateSummary}
+        activeMode={activeMode}
+        onSpeakText={handleSpeakText}
+        autoTTS={settings.autoTTS}
+        onToggleAutoTTS={() => setSettings((s) => ({ ...s, autoTTS: !s.autoTTS }))}
       />
 
       {/* PWA / APK Installation Modal */}
