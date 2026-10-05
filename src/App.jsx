@@ -13,6 +13,7 @@ import { ModeSelector } from './components/meeting/ModeSelector';
 import { LiveTranslationOverlay } from './components/meeting/LiveTranslationOverlay';
 
 import { speechService } from './services/speechService';
+import { audioSegmentService } from './services/audioSegmentService';
 import { translationEngine } from './services/translationEngine';
 import { summarizerEngine } from './services/summarizerEngine';
 import { ttsService } from './services/ttsService';
@@ -228,6 +229,7 @@ export function App() {
 
     return () => {
       speechService.stop();
+      audioSegmentService.stop();
     };
   }, []); // Run ONLY once on mount!
 
@@ -252,36 +254,145 @@ export function App() {
   const handleStartListening = () => {
     // Always start with a fresh clean screen and new session ID
     sessionIdRef.current += 1;
+    const currentSession = sessionIdRef.current;
     isListeningRef.current = true;
     setEntries([]);
     setInterimTranscript('');
     setInterimTranslation('');
     setMeetingDuration(0);
-    speechService.start(sourceLang);
+
+    if (sourceLang === 'yo') {
+      audioSegmentService.onVolumeChange = (vol) => setVolumeLevel(vol);
+      audioSegmentService.onStatusChange = (status) => {
+        const listening = status === 'listening';
+        setIsListening(listening);
+        isListeningRef.current = listening;
+      };
+      audioSegmentService.start(async ({ blob, mimeType, durationSeconds }) => {
+        if (sessionIdRef.current !== currentSession) return;
+        const currentTgt = targetLangRef.current;
+
+        const entryId = `entry-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+        const speakerNum = (entriesRef.current.length % 2) + 1;
+        const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+        const initialEntry = {
+          id: entryId,
+          speaker: `Speaker ${speakerNum}`,
+          timestamp: timeNow,
+          text: '🎙️ Processing Yoruba audio...',
+          translatedText: ''
+        };
+        setEntries((prev) => [...prev, initialEntry]);
+
+        try {
+          const result = await apiService.translateAudio({
+            blob,
+            mimeType,
+            sourceLang: 'yo',
+            targetLang: currentTgt,
+            sessionDurationSeconds: durationSeconds
+          });
+
+          if (sessionIdRef.current !== currentSession) return;
+
+          if (result.notYoruba) {
+            setEntries((prev) => prev.filter((item) => item.id !== entryId));
+            setFallbackNotice("Didn't hear Yoruba speech. Please speak clearly in Yoruba.");
+            setTimeout(() => setFallbackNotice(null), 4000);
+            return;
+          }
+
+          if (result.transcript && result.translatedText) {
+            setEntries((prev) =>
+              prev.map((item) =>
+                item.id === entryId
+                  ? { ...item, text: result.transcript, translatedText: result.translatedText }
+                  : item
+              )
+            );
+
+            if (settingsRef.current.autoTTS && result.translatedText) {
+              ttsService.speak(result.translatedText, currentTgt, { rate: settingsRef.current.ttsRate });
+            }
+          } else if (result.fallback && result.message) {
+            setEntries((prev) => prev.filter((item) => item.id !== entryId));
+            setFallbackNotice(result.message);
+            setTimeout(() => setFallbackNotice(null), 5000);
+          } else {
+            setEntries((prev) => prev.filter((item) => item.id !== entryId));
+          }
+        } catch (err) {
+          console.error('Yoruba audio translation error:', err);
+          setEntries((prev) => prev.filter((item) => item.id !== entryId));
+        }
+      });
+    } else {
+      speechService.start(sourceLang);
+    }
   };
 
   const handleStopListening = () => {
     isListeningRef.current = false;
     speechService.stop();
+    audioSegmentService.stop();
     // Auto produce summary if enabled and entries exist
     if (generateSummary && entries.length > 0) {
       handleProduceSummary();
     }
   };
 
+  const handleFinishSentence = () => {
+    if (sourceLangRef.current === 'yo') {
+      audioSegmentService.flush();
+    } else {
+      speechService.forceCommit();
+    }
+  };
+
   const handleSourceChange = (newLang) => {
+    const oldLang = sourceLang;
     setSourceLang(newLang);
     if (isListening) {
-      speechService.changeLanguage(newLang);
+      if (oldLang === 'yo' || newLang === 'yo') {
+        audioSegmentService.stop();
+        speechService.stop();
+        setTimeout(() => {
+          if (isListeningRef.current) {
+            if (newLang === 'yo') {
+              handleStartListening();
+            } else {
+              speechService.start(newLang);
+            }
+          }
+        }, 150);
+      } else {
+        speechService.changeLanguage(newLang);
+      }
     }
   };
 
   const handleSwapLanguages = () => {
     const oldSource = sourceLang;
-    setSourceLang(targetLang);
+    const oldTarget = targetLang;
+    setSourceLang(oldTarget);
     setTargetLang(oldSource);
     if (isListening) {
-      speechService.changeLanguage(targetLang);
+      if (oldSource === 'yo' || oldTarget === 'yo') {
+        audioSegmentService.stop();
+        speechService.stop();
+        setTimeout(() => {
+          if (isListeningRef.current) {
+            if (oldTarget === 'yo') {
+              handleStartListening();
+            } else {
+              speechService.start(oldTarget);
+            }
+          }
+        }, 150);
+      } else {
+        speechService.changeLanguage(oldTarget);
+      }
     }
   };
 
@@ -432,7 +543,7 @@ export function App() {
           volumeLevel={volumeLevel}
           onStartListening={handleStartListening}
           onStopListening={handleStopListening}
-          onFinishSentence={() => speechService.forceCommit()}
+          onFinishSentence={handleFinishSentence}
           onClearTranscript={handleClearTranscript}
           onSimulateMeeting={handleSimulateMeeting}
           hasEntries={entries.length > 0}
@@ -523,7 +634,7 @@ export function App() {
         targetLang={targetLang}
         volumeLevel={volumeLevel}
         meetingDuration={meetingDuration}
-        onFinishSentence={() => speechService.forceCommit()}
+        onFinishSentence={handleFinishSentence}
         onProduceSummary={handleProduceSummary}
         isSummarizing={isSummarizing}
         generateSummary={generateSummary}

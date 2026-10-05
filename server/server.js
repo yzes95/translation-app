@@ -2,6 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import Stripe from 'stripe';
+import {
+  runChain,
+  getProviderStatus,
+  LANGUAGE_NAMES,
+  getDialectContext
+} from './providers.js';
 
 dotenv.config();
 
@@ -91,7 +97,7 @@ function getUserUsage(userId) {
   return record;
 }
 
-const APP_BUILD_VERSION = '2026.10.05.v3';
+const APP_BUILD_VERSION = '2026.10.05.v4';
 
 // Server-side fast cache for identical queries (saves Gemini quota)
 const serverCache = new Map();
@@ -109,7 +115,7 @@ app.get('/', (req, res) => {
     name: 'LinguaFlow API Backend',
     version: APP_BUILD_VERSION,
     uptime: process.uptime(),
-    geminiConfigured: !!process.env.GEMINI_API_KEY,
+    providers: getProviderStatus(),
     stripeConfigured: !!stripe
   });
 });
@@ -123,7 +129,7 @@ app.get('/health', (req, res) => {
     version: APP_BUILD_VERSION,
     uptime: process.uptime(),
     timestamp: Date.now(),
-    geminiConfigured: !!process.env.GEMINI_API_KEY,
+    providers: getProviderStatus(),
     stripeConfigured: !!stripe
   });
 });
@@ -184,150 +190,161 @@ app.post('/api/translate', async (req, res) => {
   }
   userLastRequest.set(userId, now);
 
-  // 3. Server-side Query Cache (saves Gemini API calls)
+  // 3. Server-side Query Cache (saves API calls across all providers)
   const cacheKey = `${sourceLang}|${targetLang}|${cleanText.toLowerCase()}`;
   if (serverCache.has(cacheKey)) {
+    const cached = serverCache.get(cacheKey);
+    const cachedText = typeof cached === 'string' ? cached : cached.translatedText;
+    const cachedModel = typeof cached === 'string' ? 'smart-ai' : cached.modelUsed;
     return res.json({
-      translatedText: serverCache.get(cacheKey),
-      modelUsed: 'gemini-3.5-flash-lite (cache)',
+      translatedText: cachedText,
+      modelUsed: `${cachedModel} (cache)`,
       remainingMinutes: Math.round(((DAILY_LIMIT_SECONDS - usage.usedSeconds) / 60) * 10) / 10
     });
   }
 
-  // 4. Check if server Gemini key is configured
-  const geminiKey = (process.env.GEMINI_API_KEY || '').trim().replace(/^["']|["']$/g, '');
-  if (!geminiKey) {
+  // 4. Check if any provider is configured
+  const providerStatus = getProviderStatus();
+  if (!providerStatus.gemini && !providerStatus.groq && !providerStatus.cloudflare) {
     return res.json({
       translatedText: '',
       fallback: true,
       error: 'server_not_configured',
-      message: 'Server AI key not yet configured. Using Basic mode.'
+      message: 'Server AI keys not yet configured. Using Basic mode.'
     });
   }
 
-  // 5. Translate using Gemini with multi-model fallback & dialect awareness
-  const languageNames = {
-    en: 'English',
-    ar: 'Arabic',
-    es: 'Spanish',
-    fr: 'French',
-    de: 'German',
-    ur: 'Urdu',
-    hi: 'Hindi',
-    ru: 'Russian',
-    uk: 'Ukrainian',
-    tr: 'Turkish',
-    pcm: 'Nigerian Pidgin English',
-    yo: 'Yoruba'
-  };
+  const srcName = LANGUAGE_NAMES[sourceLang] || sourceLang || 'Auto-detect';
+  const tgtName = LANGUAGE_NAMES[targetLang] || targetLang || 'English';
+  const dialectContext = getDialectContext(sourceLang, targetLang);
 
-  const srcName = languageNames[sourceLang] || sourceLang || 'Auto-detect';
-  const tgtName = languageNames[targetLang] || targetLang || 'English';
+  try {
+    const chainResult = await runChain('translateText', {
+      text: cleanText,
+      srcName,
+      tgtName,
+      dialectContext
+    });
 
-  let dialectContext = '';
-  if (sourceLang === 'ar') {
-    dialectContext = `
-CRITICAL ARABIC DIALECT RULES:
-1. In conversational Egyptian Arabic, the word "نص" and the phrase "في النص" almost always mean "in the middle" (e.g. "in the middle of my speech", "halfway through", "halfway in the sentence"), NOT "in the text".
-2. Understand colloquial expressions: "شغال" = "working / running", "بيقطع" = "cutting off / interrupting", "كده" = "like this", "مش" = "not", "عايز" = "want", "طلع" = "appeared / showed".`;
-  } else if (sourceLang === 'pcm') {
-    dialectContext = `
-CRITICAL NIGERIAN PIDGIN RULES:
-1. The source is spoken Nigerian Pidgin English (e.g. "How you dey?" -> "How are you?", "Wetin dey happen?" -> "What is happening?", "I dey go" -> "I am going", "no wahala" -> "no problem", "abeg" -> "please", "na so" -> "that's true", "make we" -> "let us", "abi" -> "right?", "dey come" -> "is coming").
-2. Translate all Nigerian Pidgin idioms and vocabulary accurately into natural standard ${tgtName}.`;
-  } else if (sourceLang === 'yo') {
-    dialectContext = `
-CRITICAL YORUBA RULES:
-1. The source is Yoruba. Accurately translate conversational Yoruba into natural standard ${tgtName}.`;
-  }
+    const translatedText = chainResult?.translatedText || '';
+    const modelUsed = chainResult?.modelUsed || 'smart-ai';
 
-  const prompt = `You are an expert simultaneous conference interpreter. Translate the following speech from ${srcName} into ${tgtName}.
-${dialectContext}
+    if (translatedText) {
+      if (serverCache.size >= CACHE_MAX_ITEMS) {
+        const firstKey = serverCache.keys().next().value;
+        serverCache.delete(firstKey);
+      }
+      serverCache.set(cacheKey, { translatedText, modelUsed });
 
-Rules:
-1. Translate conversational speech accurately, naturally, and contextually.
-2. Output ONLY the translated text in ${tgtName} without quotation marks, markdown formatting, dialect labels, or explanations.
+      usage.usedSeconds += Math.min(10, sessionDurationSeconds);
+      const remainingSeconds = Math.max(0, DAILY_LIMIT_SECONDS - usage.usedSeconds);
 
-Speech to translate:
-"${cleanText}"`;
-
-  // Focus only on active models supported on the project
-  const candidateModels = [
-    'gemini-3.5-flash-lite',
-    'gemini-3.5-flash'
-  ];
-  let translatedText = '';
-  let modelUsed = '';
-  let lastError = null;
-
-  for (const model of candidateModels) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6500);
-
-      const apiRes = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 256
-          }
-        }),
-        signal: controller.signal
+      return res.json({
+        translatedText,
+        modelUsed,
+        remainingMinutes: Math.round((remainingSeconds / 60) * 10) / 10
       });
-      clearTimeout(timeout);
-
-      if (apiRes.status === 429) {
-        lastError = 'Rate limit reached';
-        continue;
-      }
-
-      if (apiRes.ok) {
-        const data = await apiRes.json();
-        translatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-        if (translatedText) {
-          modelUsed = model;
-          break; // Success!
-        }
-      } else {
-        const errBody = await apiRes.text().catch(() => '');
-        console.warn(`Gemini model ${model} returned ${apiRes.status}:`, errBody);
-        lastError = `Status ${apiRes.status} (${model}): ${errBody}`;
-      }
-    } catch (e) {
-      lastError = e.message;
     }
-  }
-
-  if (translatedText) {
-    // Save to server fast cache
-    if (serverCache.size >= CACHE_MAX_ITEMS) {
-      const firstKey = serverCache.keys().next().value;
-      serverCache.delete(firstKey);
-    }
-    serverCache.set(cacheKey, translatedText);
-
-    // Record time usage
-    usage.usedSeconds += Math.min(10, sessionDurationSeconds);
-    const remainingSeconds = Math.max(0, DAILY_LIMIT_SECONDS - usage.usedSeconds);
-
+  } catch (err) {
+    console.warn('All translation providers failed or rate-limited:', err.message);
     return res.json({
-      translatedText,
-      modelUsed,
-      remainingMinutes: Math.round((remainingSeconds / 60) * 10) / 10
+      translatedText: '',
+      fallback: true,
+      details: err.message,
+      message: 'Smart AI is busy or daily quota reached. Switched smoothly to Basic mode.'
     });
   }
 
-  console.warn('Gemini models unavailable/rate-limited, falling back to basic:', lastError);
   res.json({
     translatedText: '',
     fallback: true,
-    details: lastError,
-    message: 'Smart AI rate limit reached. Switched smoothly to Basic mode.'
+    message: 'Smart AI unavailable. Switched smoothly to Basic mode.'
   });
+});
+
+// -------------------------------------------------------------
+// 3.5 Yoruba Audio Translation (Gemini 1st -> Groq 2nd -> Cloudflare 3rd)
+// -------------------------------------------------------------
+app.post('/api/translate-audio', express.json({ limit: '8mb' }), async (req, res) => {
+  const { audioBase64, mimeType = 'audio/webm', sourceLang, targetLang, sessionDurationSeconds = 3 } = req.body;
+  const userId = req.headers['x-user-id'] || req.body.userId || req.ip;
+
+  if (!audioBase64) {
+    return res.status(400).json({ error: 'Missing audio data' });
+  }
+
+  if (sourceLang !== 'yo') {
+    return res.status(400).json({ error: 'Audio translation is currently reserved for Yoruba.' });
+  }
+
+  // 1. Check daily quota
+  const usage = getUserUsage(userId);
+  if (usage.usedSeconds >= DAILY_LIMIT_SECONDS) {
+    return res.json({
+      transcript: '',
+      translatedText: '',
+      fallback: true,
+      error: 'quota_exceeded',
+      message: 'You have used your 30 minutes of Smart AI for today.'
+    });
+  }
+
+  // 2. Per-user throttling
+  const now = Date.now();
+  const lastTime = userLastRequest.get(userId) || 0;
+  if (now - lastTime < 1000) {
+    return res.json({
+      transcript: '',
+      translatedText: '',
+      fallback: true,
+      rateLimited: true,
+      message: 'Speaking pace fast. Waiting for audio buffer.'
+    });
+  }
+  userLastRequest.set(userId, now);
+
+  const buffer = Buffer.from(audioBase64, 'base64');
+  if (buffer.length > 5 * 1024 * 1024) {
+    return res.status(400).json({ error: 'Audio payload too large (max 5MB)' });
+  }
+
+  const tgtName = LANGUAGE_NAMES[targetLang] || targetLang || 'English';
+
+  try {
+    const chainResult = await runChain('translateAudio', {
+      buffer,
+      mimeType,
+      srcName: 'Yoruba',
+      tgtName
+    });
+
+    if (chainResult.notYoruba) {
+      return res.json({
+        transcript: '',
+        translatedText: '',
+        notYoruba: true,
+        modelUsed: chainResult.modelUsed
+      });
+    }
+
+    // Record usage
+    usage.usedSeconds += Math.min(10, sessionDurationSeconds);
+
+    return res.json({
+      transcript: chainResult.transcript,
+      translatedText: chainResult.translatedText,
+      modelUsed: chainResult.modelUsed,
+      notYoruba: false
+    });
+  } catch (err) {
+    console.warn('All audio translation providers failed:', err.message);
+    return res.json({
+      transcript: '',
+      translatedText: '',
+      fallback: true,
+      message: 'Yoruba AI voice service is temporarily busy. Please try again in a moment.'
+    });
+  }
 });
 
 // -------------------------------------------------------------

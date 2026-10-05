@@ -125,6 +125,68 @@ class ApiService {
     }
   }
 
+  // Yoruba Audio translation via backend multi-provider chain
+  async translateAudio({ blob, mimeType = 'audio/webm', sourceLang = 'yo', targetLang = 'en', sessionDurationSeconds = 3 }) {
+    try {
+      // Convert blob to base64
+      const base64Audio = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const res = reader.result;
+          const base64 = typeof res === 'string' ? res.split(',')[1] : '';
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      if (!base64Audio) {
+        return { transcript: '', translatedText: '', fallback: true, error: 'empty_audio' };
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/translate-audio`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.userId
+        },
+        body: JSON.stringify({
+          audioBase64: base64Audio,
+          mimeType,
+          sourceLang,
+          targetLang,
+          sessionDurationSeconds
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.fallback) {
+        return {
+          transcript: '',
+          translatedText: '',
+          fallback: true,
+          message: data.message || 'Yoruba voice translation is currently busy.'
+        };
+      }
+
+      return {
+        transcript: data.transcript || '',
+        translatedText: data.translatedText || '',
+        modelUsed: data.modelUsed,
+        notYoruba: !!data.notYoruba,
+        fallback: false
+      };
+    } catch (err) {
+      console.warn('Audio translation request error:', err);
+      return {
+        transcript: '',
+        translatedText: '',
+        fallback: true,
+        message: 'Could not connect to translation server.'
+      };
+    }
+  }
+
   // Create Stripe Checkout Session
   async createTipSession(amountGbp) {
     const returnUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');

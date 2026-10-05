@@ -35,6 +35,12 @@ export const LanguageSelector = ({
               ))}
             </select>
           </div>
+          {sourceLang === 'yo' && (
+            <div className="text-[11px] text-amber-400/90 flex items-center space-x-1 pt-0.5">
+              <span>✨</span>
+              <span>Yoruba voice uses multi-model AI audio (Gemini ➜ Groq ➜ Cloudflare)</span>
+            </div>
+          )}
         </div>
 
         {/* Swap button */}

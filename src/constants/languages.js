@@ -156,8 +156,11 @@ export const SUPPORTED_LANGUAGES = [
     flag: '🇳🇬',
     speechCode: 'en-GB',
     speechCodesFallback: ['en-GB', 'en-US'],
+    audioEngine: 'server',
+    note: 'Real spoken Yoruba audio is interpreted via multi-provider AI',
     rtl: false,
     samplePhrases: [
+      'Mo ń lọ sí ọjà.',
       'Ẹ ku owurọ gbogbo eniyan, ẹ jẹ ki a bẹrẹ eto ipade wa.',
       'A nilo lati pari iṣẹ akanṣe yii ṣaaju ọjọ Jimọ.',
       'Onibara fẹran ẹrọ itumọ ede yii pupọ.',
