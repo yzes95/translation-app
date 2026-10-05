@@ -134,19 +134,7 @@ app.get('/api/usage', (req, res) => {
   });
 });
 
-// Diagnostic endpoint to check available models for current key
-app.get('/api/models', async (req, res) => {
-  const geminiKey = (process.env.GEMINI_API_KEY || '').trim().replace(/^["']|["']$/g, '');
-  if (!geminiKey) return res.status(503).json({ error: 'No key' });
 
-  try {
-    const v1betaRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`);
-    const v1betaData = await v1betaRes.json();
-    res.json({ v1beta: v1betaData });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // -------------------------------------------------------------
 // 3. Smart Mode AI Translation (Shared Gemini Key with limits)
