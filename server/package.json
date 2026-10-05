@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "echo 'Backend server ready'",
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
