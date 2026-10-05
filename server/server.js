@@ -269,7 +269,8 @@ app.post('/api/tips/checkout', async (req, res) => {
   }
 
   const { amountGbp = 5, returnUrl } = req.body;
-  const amountPence = Math.max(100, Math.round(Number(amountGbp) * 100)); // Minimum £1.00
+  // Stripe minimum charge for GBP is 30p (£0.30)
+  const amountPence = Math.max(30, Math.round(Number(amountGbp) * 100));
   const siteUrl = returnUrl || req.headers.origin || 'https://yzes95.github.io/translation-app';
 
   try {
