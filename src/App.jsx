@@ -68,6 +68,8 @@ export function App() {
 
   const timerRef = useRef(null);
   const currentMeetingIdRef = useRef(null);
+  const isListeningRef = useRef(false);
+  const sessionIdRef = useRef(0);
 
   // Maintain refs for live callback access without re-binding
   const sourceLangRef = useRef(sourceLang);
@@ -149,7 +151,9 @@ export function App() {
     };
 
     speechService.onStatusChange = (status) => {
-      setIsListening(status === 'listening');
+      const listening = status === 'listening';
+      setIsListening(listening);
+      isListeningRef.current = listening;
     };
 
     speechService.onVolumeChange = (vol) => {
@@ -162,6 +166,8 @@ export function App() {
 
     speechService.onResult = async ({ transcript, isFinal }) => {
       if (!transcript || !transcript.trim()) return;
+      if (!isListeningRef.current) return;
+      const currentSession = sessionIdRef.current;
       const currentSrc = sourceLangRef.current;
       const currentTgt = targetLangRef.current;
 
@@ -172,8 +178,11 @@ export function App() {
         }
         // Fast speculative translation for interim text — always uses fast basic mode, NEVER spams Gemini
         interimDebounceRef.current = setTimeout(() => {
+          if (!isListeningRef.current || sessionIdRef.current !== currentSession) return;
           translationEngine.translate(transcript, currentSrc, currentTgt, 'basic').then((specTranslation) => {
-            setInterimTranslation(specTranslation);
+            if (isListeningRef.current && sessionIdRef.current === currentSession) {
+              setInterimTranslation(specTranslation);
+            }
           });
         }, 250);
       } else {
@@ -197,17 +206,20 @@ export function App() {
           translatedText: ''
         };
 
+        if (!isListeningRef.current || sessionIdRef.current !== currentSession) return;
         setEntries((prev) => [...prev, initialEntry]);
 
         // Translate in background and update entry
         try {
           const translatedText = await translationEngine.translate(transcript, currentSrc, currentTgt, activeModeRef.current);
-          setEntries((prev) =>
-            prev.map((item) => (item.id === entryId ? { ...item, translatedText: translatedText } : item))
-          );
+          if (isListeningRef.current && sessionIdRef.current === currentSession) {
+            setEntries((prev) =>
+              prev.map((item) => (item.id === entryId ? { ...item, translatedText: translatedText } : item))
+            );
 
-          if (settingsRef.current.autoTTS && translatedText) {
-            ttsService.speak(translatedText, currentTgt, { rate: settingsRef.current.ttsRate });
+            if (settingsRef.current.autoTTS && translatedText) {
+              ttsService.speak(translatedText, currentTgt, { rate: settingsRef.current.ttsRate });
+            }
           }
         } catch (err) {
           console.error('Translation error:', err);
@@ -239,7 +251,9 @@ export function App() {
 
   // Controls
   const handleStartListening = () => {
-    // Always start with a fresh clean screen
+    // Always start with a fresh clean screen and new session ID
+    sessionIdRef.current += 1;
+    isListeningRef.current = true;
     setEntries([]);
     setInterimTranscript('');
     setInterimTranslation('');
@@ -248,6 +262,7 @@ export function App() {
   };
 
   const handleStopListening = () => {
+    isListeningRef.current = false;
     speechService.stop();
     // Auto produce summary if enabled and entries exist
     if (generateSummary && entries.length > 0) {
@@ -273,6 +288,7 @@ export function App() {
 
   const handleClearTranscript = () => {
     if (window.confirm('Clear current live transcript?')) {
+      sessionIdRef.current += 1;
       setEntries([]);
       setMeetingDuration(0);
       setInterimTranscript('');
@@ -444,6 +460,7 @@ export function App() {
           summary={activeSummary}
           targetLang={targetLang}
           onClose={() => {
+            sessionIdRef.current += 1;
             setActiveSummary(null);
             setEntries([]);
             setInterimTranscript('');
@@ -451,6 +468,7 @@ export function App() {
             setMeetingDuration(0);
           }}
           onSaveToHistory={() => {
+            sessionIdRef.current += 1;
             loadMeetings();
             setEntries([]);
             setInterimTranscript('');

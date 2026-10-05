@@ -139,8 +139,8 @@ export const SUPPORTED_LANGUAGES = [
     name: 'Nigerian Pidgin',
     nativeName: 'Naijá / Pidgin',
     flag: '🇳🇬',
-    speechCode: 'en-NG',
-    speechCodesFallback: ['en-NG', 'en-GB'],
+    speechCode: 'en-GB',
+    speechCodesFallback: ['en-GB', 'en-US'],
     rtl: false,
     samplePhrases: [
       'Good morning everybody, make we look wetin we get to do today.',
@@ -154,8 +154,8 @@ export const SUPPORTED_LANGUAGES = [
     name: 'Yoruba',
     nativeName: 'Èdè Yorùbá',
     flag: '🇳🇬',
-    speechCode: 'yo-NG',
-    speechCodesFallback: ['yo-NG', 'en-NG'],
+    speechCode: 'en-GB',
+    speechCodesFallback: ['en-GB', 'en-US'],
     rtl: false,
     samplePhrases: [
       'Ẹ ku owurọ gbogbo eniyan, ẹ jẹ ki a bẹrẹ eto ipade wa.',

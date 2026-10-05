@@ -14,7 +14,7 @@ class SpeechService {
     this.currentLanguage = 'en';
     this.restartTimeout = null;
     this.silenceTimer = null;
-    this.pauseDelayMs = 2800; // Natural meeting pause delay (2.8 seconds)
+    this.pauseDelayMs = 2200; // Natural meeting pause delay (2.2 seconds)
 
     // Conversational Accumulator: keeps full sentence intact across natural pauses
     this.accumulatedSentence = '';
@@ -208,10 +208,10 @@ class SpeechService {
         });
       }
 
-      // Reset sentence pause timer (generous 2.8s pause to prevent cutting speech in half)
+      // Reset sentence pause timer (2.2s natural meeting pause delay)
       if (this.silenceTimer) clearTimeout(this.silenceTimer);
 
-      if (this.accumulatedSentence) {
+      if (currentFullText) {
         this.silenceTimer = setTimeout(() => {
           this.commitSentence();
         }, this.pauseDelayMs);
@@ -245,7 +245,7 @@ class SpeechService {
               console.warn('Recognition restart note:', err);
             }
           }
-        }, 100);
+        }, 80);
       } else {
         this.isListening = false;
         if (this.onStatusChange) this.onStatusChange('idle');
@@ -272,6 +272,16 @@ class SpeechService {
         isFinal: true,
         confidence: 0.95
       });
+    }
+
+    // Flush and reset Chrome recognition buffer so next sentence starts fresh
+    if (this.recognition && this.userActive) {
+      try {
+        this.recognition.onresult = null;
+        this.recognition.stop();
+      } catch (e) {
+        // ignore
+      }
     }
   }
 

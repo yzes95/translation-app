@@ -52,32 +52,32 @@ export const LiveControlBar = ({
         </div>
 
         {/* Center: Primary Controls */}
-        <div className="flex items-center space-x-2 sm:space-x-3">
+        <div className="flex items-center justify-center flex-wrap gap-2 sm:gap-3">
           {!isListening ? (
             <button
               onClick={onStartListening}
-              className="group relative flex items-center space-x-2 px-6 py-3.5 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold text-sm shadow-lg shadow-blue-500/25 active:scale-95 transition-all cursor-pointer"
+              className="group relative flex items-center space-x-2 px-5 py-3 sm:px-6 sm:py-3.5 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-blue-500/25 active:scale-95 transition-all cursor-pointer"
             >
-              <Mic className="w-5 h-5 transition-transform group-hover:scale-110" />
+              <Mic className="w-4 h-4 sm:w-5 sm:h-5 transition-transform group-hover:scale-110" />
               <span>Start Live Listening</span>
             </button>
           ) : (
             <>
               <button
                 onClick={onStopListening}
-                className="flex items-center space-x-2 px-5 py-3 rounded-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-red-500/25 active:scale-95 transition-all cursor-pointer"
+                className="flex items-center space-x-1.5 sm:space-x-2 px-4 py-2.5 sm:px-5 sm:py-3 rounded-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-red-500/25 active:scale-95 transition-all cursor-pointer"
               >
-                <Square className="w-4 h-4 fill-current" />
+                <Square className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current" />
                 <span>Stop</span>
               </button>
 
               {/* Manual Immediate Commit Button */}
               <button
                 onClick={onFinishSentence}
-                className="flex items-center space-x-1.5 px-4 py-3 rounded-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs sm:text-sm font-semibold transition-all active:scale-95 cursor-pointer"
+                className="flex items-center space-x-1.5 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs sm:text-sm font-semibold transition-all active:scale-95 cursor-pointer"
                 title="Finish current sentence immediately and translate"
               >
-                <CheckCircle2 className="w-4 h-4 text-blue-400" />
+                <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400" />
                 <span>Done Speaking</span>
               </button>
             </>
@@ -88,10 +88,10 @@ export const LiveControlBar = ({
             <button
               onClick={onProduceSummary}
               disabled={isSummarizing}
-              className="flex items-center space-x-1.5 px-4 py-3 rounded-full bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 font-medium text-xs sm:text-sm transition-all active:scale-95 disabled:opacity-50"
+              className="flex items-center space-x-1.5 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-full bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 font-medium text-xs sm:text-sm transition-all active:scale-95 disabled:opacity-50"
               title="Generate summary of discussion"
             >
-              <Sparkles className={`w-4 h-4 text-indigo-400 ${isSummarizing ? 'animate-spin' : ''}`} />
+              <Sparkles className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-400 ${isSummarizing ? 'animate-spin' : ''}`} />
               <span>{isSummarizing ? 'Generating...' : 'Produce Summary'}</span>
             </button>
           )}
