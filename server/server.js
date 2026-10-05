@@ -168,22 +168,57 @@ app.post('/api/translate', async (req, res) => {
   }
 
   // 3. Translate using Gemini with multi-model fallback & dialect awareness
-  const prompt = `You are an expert simultaneous conference interpreter specializing in spoken Arabic dialects, particularly Egyptian, Levantine, and Gulf Arabic.
+  const languageNames = {
+    en: 'English',
+    ar: 'Arabic',
+    es: 'Spanish',
+    fr: 'French',
+    de: 'German',
+    ur: 'Urdu',
+    hi: 'Hindi',
+    ru: 'Russian',
+    uk: 'Ukrainian',
+    tr: 'Turkish',
+    pcm: 'Nigerian Pidgin English',
+    yo: 'Yoruba'
+  };
 
-CRITICAL DIALECT RULES FOR ARABIC:
+  const srcName = languageNames[sourceLang] || sourceLang || 'Auto-detect';
+  const tgtName = languageNames[targetLang] || targetLang || 'English';
+
+  let dialectContext = '';
+  if (sourceLang === 'ar') {
+    dialectContext = `
+CRITICAL ARABIC DIALECT RULES:
 1. In conversational Egyptian Arabic, the word "نص" and the phrase "في النص" almost always mean "in the middle" (e.g. "in the middle of my speech", "halfway through", "halfway in the sentence"), NOT "in the text".
-2. Understand colloquial expressions: "شغال" = "working / running", "بيقطع" = "cutting off / interrupting", "كده" = "like this", "مش" = "not", "عايز" = "want", "طلع" = "appeared / showed".
-3. Translate conversational spoken speech naturally and accurately into ${targetLang}.
-4. Output ONLY the translated sentence without quotation marks, markdown, or explanations.
+2. Understand colloquial expressions: "شغال" = "working / running", "بيقطع" = "cutting off / interrupting", "كده" = "like this", "مش" = "not", "عايز" = "want", "طلع" = "appeared / showed".`;
+  } else if (sourceLang === 'pcm') {
+    dialectContext = `
+CRITICAL NIGERIAN PIDGIN RULES:
+1. The source is spoken Nigerian Pidgin English (e.g. "How you dey?" -> "How are you?", "Wetin dey happen?" -> "What is happening?", "I dey go" -> "I am going", "no wahala" -> "no problem", "abeg" -> "please", "na so" -> "that's true", "make we" -> "let us", "abi" -> "right?", "dey come" -> "is coming").
+2. Translate all Nigerian Pidgin idioms and vocabulary accurately into natural standard ${tgtName}.`;
+  } else if (sourceLang === 'yo') {
+    dialectContext = `
+CRITICAL YORUBA RULES:
+1. The source is Yoruba. Accurately translate conversational Yoruba into natural standard ${tgtName}.`;
+  }
+
+  const prompt = `You are an expert simultaneous conference interpreter. Translate the following speech from ${srcName} into ${tgtName}.
+${dialectContext}
+
+Rules:
+1. Translate conversational speech accurately, naturally, and contextually.
+2. Output ONLY the translated text in ${tgtName} without quotation marks, markdown formatting, dialect labels, or explanations.
 
 Speech to translate:
 "${text}"`;
 
   const candidateModels = [
-    'gemini-3.5-flash',
     'gemini-3.5-flash-lite',
-    'gemini-3.7-flash',
-    'gemini-3.8-flash'
+    'gemini-3.5-flash',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash'
   ];
   let translatedText = '';
   let modelUsed = '';

@@ -104,47 +104,56 @@ export const LiveTranslationOverlay = ({
   // Audio wave visualizer bars
   const bars = [0.4, 0.7, 1.0, 0.8, 1.2, 0.9, 0.6, 0.3];
 
-  // Dynamic scaling: gradually step down font size as text length grows so it always fits without overflowing
+  // Granular smooth scaling: gracefully steps down font size as text length grows so it always fits without overflowing
   const getDynamicNewFontSize = (text, sizePref) => {
     const len = (text || '').length;
     if (sizePref === 'huge') {
-      if (len > 150) return 'text-xl sm:text-2xl md:text-3xl lg:text-4xl';
-      if (len > 100) return 'text-2xl sm:text-3xl md:text-4xl lg:text-5xl';
-      if (len > 60)  return 'text-3xl sm:text-5xl md:text-6xl lg:text-7xl';
-      if (len > 30)  return 'text-4xl sm:text-6xl md:text-7xl lg:text-8xl';
-      return 'text-5xl sm:text-7xl md:text-8xl lg:text-9xl xl:text-[10rem]';
+      if (len > 250) return 'text-base sm:text-lg md:text-xl lg:text-2xl';
+      if (len > 180) return 'text-lg sm:text-xl md:text-2xl lg:text-3xl';
+      if (len > 130) return 'text-xl sm:text-2xl md:text-3xl lg:text-4xl';
+      if (len > 90)  return 'text-2xl sm:text-3xl md:text-4xl lg:text-5xl';
+      if (len > 60)  return 'text-3xl sm:text-4xl md:text-5xl lg:text-6xl';
+      if (len > 30)  return 'text-4xl sm:text-5xl md:text-6xl lg:text-7xl';
+      return 'text-5xl sm:text-7xl md:text-8xl lg:text-9xl';
     }
     if (sizePref === 'normal') {
-      if (len > 150) return 'text-base sm:text-lg md:text-xl lg:text-2xl';
-      if (len > 100) return 'text-lg sm:text-xl md:text-2xl lg:text-3xl';
-      if (len > 60)  return 'text-xl sm:text-2xl md:text-3xl lg:text-4xl';
-      if (len > 30)  return 'text-2xl sm:text-3xl md:text-4xl lg:text-5xl';
-      return 'text-3xl sm:text-5xl md:text-6xl lg:text-7xl';
+      if (len > 250) return 'text-xs sm:text-xs md:text-sm lg:text-base';
+      if (len > 180) return 'text-xs sm:text-sm md:text-base lg:text-lg';
+      if (len > 130) return 'text-sm sm:text-base md:text-lg lg:text-xl';
+      if (len > 90)  return 'text-base sm:text-lg md:text-xl lg:text-2xl';
+      if (len > 60)  return 'text-lg sm:text-xl md:text-2xl lg:text-3xl';
+      if (len > 30)  return 'text-xl sm:text-2xl md:text-3xl lg:text-4xl';
+      return 'text-2xl sm:text-3xl md:text-4xl lg:text-5xl';
     }
     // Default 'large'
-    if (len > 150) return 'text-lg sm:text-xl md:text-2xl lg:text-3xl';
-    if (len > 100) return 'text-xl sm:text-2xl md:text-3xl lg:text-4xl';
-    if (len > 60)  return 'text-2xl sm:text-4xl md:text-5xl lg:text-6xl';
-    if (len > 30)  return 'text-3xl sm:text-5xl md:text-6xl lg:text-7xl';
-    return 'text-4xl sm:text-6xl md:text-7xl lg:text-8xl xl:text-9xl';
+    if (len > 250) return 'text-sm sm:text-base md:text-lg lg:text-xl';
+    if (len > 180) return 'text-base sm:text-lg md:text-xl lg:text-2xl';
+    if (len > 130) return 'text-lg sm:text-xl md:text-2xl lg:text-3xl';
+    if (len > 90)  return 'text-xl sm:text-2xl md:text-3xl lg:text-4xl';
+    if (len > 60)  return 'text-2xl sm:text-3xl md:text-4xl lg:text-5xl';
+    if (len > 30)  return 'text-3xl sm:text-4xl md:text-5xl lg:text-6xl';
+    return 'text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl';
   };
 
   const getDynamicOldFontSize = (text, sizePref) => {
     const len = (text || '').length;
     if (sizePref === 'huge') {
-      if (len > 120) return 'text-base sm:text-lg md:text-xl';
-      if (len > 70)  return 'text-lg sm:text-xl md:text-2xl';
-      return 'text-xl sm:text-2xl md:text-3xl lg:text-4xl';
+      if (len > 160) return 'text-xs sm:text-sm md:text-base';
+      if (len > 100) return 'text-sm sm:text-base md:text-lg';
+      if (len > 60)  return 'text-base sm:text-lg md:text-xl';
+      return 'text-lg sm:text-xl md:text-2xl';
     }
     if (sizePref === 'normal') {
-      if (len > 120) return 'text-xs sm:text-sm md:text-base';
-      if (len > 70)  return 'text-sm sm:text-base md:text-lg';
-      return 'text-base sm:text-lg md:text-xl lg:text-2xl';
+      if (len > 160) return 'text-[11px] sm:text-xs md:text-sm';
+      if (len > 100) return 'text-xs sm:text-sm md:text-base';
+      if (len > 60)  return 'text-sm sm:text-base md:text-lg';
+      return 'text-base sm:text-lg md:text-xl';
     }
     // Default 'large'
-    if (len > 120) return 'text-sm sm:text-base md:text-lg';
-    if (len > 70)  return 'text-base sm:text-lg md:text-xl';
-    return 'text-lg sm:text-xl md:text-2xl lg:text-3xl';
+    if (len > 160) return 'text-xs sm:text-sm md:text-base';
+    if (len > 100) return 'text-sm sm:text-base md:text-lg';
+    if (len > 60)  return 'text-base sm:text-lg md:text-xl';
+    return 'text-lg sm:text-xl md:text-2xl';
   };
 
   return (
@@ -183,6 +192,26 @@ export const LiveTranslationOverlay = ({
               <ListFilter className="w-3.5 h-3.5" />
               <span>Transcript</span>
             </button>
+          </div>
+
+          {/* Active Mode / Model Indicator */}
+          <div className="hidden lg:flex items-center space-x-1.5 px-3 py-1 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold">
+            {activeMode === 'smart' ? (
+              <span className="text-amber-400 flex items-center space-x-1">
+                <span>⭐</span>
+                <span>Smart AI (Gemini Pro)</span>
+              </span>
+            ) : activeMode === 'unlimited' ? (
+              <span className="text-violet-400 flex items-center space-x-1">
+                <span>♾️</span>
+                <span>Unlimited AI</span>
+              </span>
+            ) : (
+              <span className="text-emerald-400 flex items-center space-x-1">
+                <span>🟢</span>
+                <span>Basic Free</span>
+              </span>
+            )}
           </div>
         </div>
 

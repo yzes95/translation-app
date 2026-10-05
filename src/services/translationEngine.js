@@ -97,9 +97,44 @@ export function normalizeArabicDialect(text) {
   return s;
 }
 
+export function normalizeNigerianPidgin(text) {
+  if (!text) return '';
+  let s = text.trim();
+  const replacements = [
+    [/\bhow you dey\b/gi, 'how are you'],
+    [/\bhow body\b/gi, 'how are you feeling'],
+    [/\bwetin dey happen\b|\bwetin dey sup\b/gi, 'what is happening'],
+    [/\bwetin you dey do\b/gi, 'what are you doing'],
+    [/\bwetin be dat\b|\bwetin be that\b/gi, 'what is that'],
+    [/\bwetin\b/gi, 'what'],
+    [/\bno wahala\b/gi, 'no problem'],
+    [/\bwahala\b/gi, 'trouble'],
+    [/\babeg\b/gi, 'please'],
+    [/\bna so\b/gi, 'that is true'],
+    [/\bna lie\b/gi, 'that is a lie'],
+    [/\bmake we\b/gi, 'let us'],
+    [/\bi dey go\b/gi, 'I am going'],
+    [/\bwe dey go\b/gi, 'we are going'],
+    [/\bdey go\b/gi, 'going'],
+    [/\bdey come\b/gi, 'coming'],
+    [/\bi fit\b/gi, 'I can'],
+    [/\byou fit\b/gi, 'you can'],
+    [/\bcomot\b/gi, 'leave'],
+    [/\boya\b/gi, 'come on'],
+    [/\babi\b/gi, 'right?'],
+    [/\bwell well\b/gi, 'very well'],
+    [/\bsmall small\b/gi, 'gradually']
+  ];
+  for (const [pattern, replacement] of replacements) {
+    s = s.replace(pattern, replacement);
+  }
+  return s;
+}
+
 export class TranslationEngine {
   constructor() {
     this.activeBackend = 'online-fast';
+    this.lastModelUsed = 'gemini-3.5-flash-lite';
   }
 
   getAIConfig() {
@@ -200,6 +235,9 @@ export class TranslationEngine {
       try {
         const smartRes = await apiService.translateSmart(cleanText, sourceLang, targetLang);
         if (smartRes && !smartRes.fallback && smartRes.translatedText) {
+          if (smartRes.modelUsed) {
+            this.lastModelUsed = smartRes.modelUsed;
+          }
           cache.set(cacheKey, smartRes.translatedText);
           return smartRes.translatedText;
         }
@@ -208,23 +246,32 @@ export class TranslationEngine {
       }
     }
 
-    // 4. Dialect Pre-Processing for Arabic
+    // 4. Dialect Pre-Processing for Arabic & Nigerian Pidgin
     let queryText = cleanText;
+    let actualSource = sourceLang;
     if (sourceLang === 'ar') {
       queryText = normalizeArabicDialect(cleanText);
+    } else if (sourceLang === 'pcm') {
+      queryText = normalizeNigerianPidgin(cleanText);
+      if (targetLang === 'en') {
+        // Pidgin normalized into clear standard English
+        cache.set(cacheKey, queryText);
+        return queryText;
+      }
+      actualSource = 'en';
     }
 
-    // 4. Free In-Browser Multi-Language Neural Translation (All 9 languages with English Pivot)
+    // 5. Free In-Browser Multi-Language Neural Translation (All languages with English Pivot)
     const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
     if (isOnline) {
       // Direct attempt
-      let webResult = await this.fetchSingleWebTranslation(queryText, sourceLang, targetLang);
+      let webResult = await this.fetchSingleWebTranslation(queryText, actualSource, targetLang);
 
       // Smart English Pivot: For non-English pairs (e.g. Urdu -> Ukrainian, Turkish -> Hindi)
       // If direct translation produced nothing or returned unchanged text, pivot through English
-      if (!webResult && sourceLang !== 'en' && targetLang !== 'en') {
+      if (!webResult && actualSource !== 'en' && targetLang !== 'en') {
         try {
-          const pivotToEn = await this.fetchSingleWebTranslation(queryText, sourceLang, 'en');
+          const pivotToEn = await this.fetchSingleWebTranslation(queryText, actualSource, 'en');
           if (pivotToEn && pivotToEn.toLowerCase() !== queryText.toLowerCase()) {
             const finalFromEn = await this.fetchSingleWebTranslation(pivotToEn, 'en', targetLang);
             if (finalFromEn) {
@@ -269,10 +316,19 @@ export class TranslationEngine {
   }
 
   async translateWithAI(text, sourceLang, targetLang, { provider, apiKey, model }) {
+    let dialectNote = '';
+    if (sourceLang === 'ar') {
+      dialectNote = ' Accurately translate spoken Arabic dialects (especially Egyptian slang like "في النص" = "in the middle").';
+    } else if (sourceLang === 'pcm') {
+      dialectNote = ' Accurately translate spoken Nigerian Pidgin English idioms (e.g. "wetin dey happen", "how you dey", "no wahala", "abeg") into standard natural speech.';
+    } else if (sourceLang === 'yo') {
+      dialectNote = ' Accurately translate conversational Yoruba idioms into standard natural speech.';
+    }
+
     if (provider === 'gemini') {
       const selectedModel = model || 'gemini-1.5-flash';
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`;
-      const prompt = `You are a live simultaneous meeting interpreter. Translate the following speech from ${sourceLang} to ${targetLang}. Preserve natural conversational tone and accurately translate colloquial dialect idioms (such as Egyptian Arabic slang). Output ONLY the translated text without quotes or explanations.\n\nSpeech:\n${text}`;
+      const prompt = `You are a live simultaneous meeting interpreter. Translate the following speech from ${sourceLang} to ${targetLang}.${dialectNote} Output ONLY the translated text without quotes or explanations.\n\nSpeech:\n${text}`;
 
       const res = await fetch(url, {
         method: 'POST',
@@ -303,7 +359,7 @@ export class TranslationEngine {
           messages: [
             {
               role: 'system',
-              content: `You are a professional simultaneous interpreter. Translate conversational speech from ${sourceLang} to ${targetLang}. Accurately understand colloquial dialect idioms (like Egyptian slang). Output ONLY the translated sentence.`
+              content: `You are a professional simultaneous interpreter. Translate conversational speech from ${sourceLang} to ${targetLang}.${dialectNote} Output ONLY the translated sentence.`
             },
             {
               role: 'user',

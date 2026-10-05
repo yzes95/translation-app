@@ -74,6 +74,7 @@ export function App() {
   const settingsRef = useRef(settings);
   const entriesRef = useRef(entries);
   const activeModeRef = useRef(activeMode);
+  const interimDebounceRef = useRef(null);
 
   // Check URL query parameters for Stripe checkout return (?tip=success or ?tip=cancelled)
   useEffect(() => {
@@ -160,11 +161,20 @@ export function App() {
 
       if (!isFinal) {
         setInterimTranscript(transcript);
-        // Fast speculative translation for interim text
-        translationEngine.translate(transcript, currentSrc, currentTgt, activeModeRef.current).then((specTranslation) => {
-          setInterimTranslation(specTranslation);
-        });
+        if (interimDebounceRef.current) {
+          clearTimeout(interimDebounceRef.current);
+        }
+        // Fast speculative translation for interim text — always uses fast basic mode, NEVER spams Gemini
+        interimDebounceRef.current = setTimeout(() => {
+          translationEngine.translate(transcript, currentSrc, currentTgt, 'basic').then((specTranslation) => {
+            setInterimTranslation(specTranslation);
+          });
+        }, 250);
       } else {
+        if (interimDebounceRef.current) {
+          clearTimeout(interimDebounceRef.current);
+          interimDebounceRef.current = null;
+        }
         setInterimTranscript('');
         setInterimTranslation('');
 
@@ -223,13 +233,11 @@ export function App() {
 
   // Controls
   const handleStartListening = () => {
-    // If starting a new session after stopping, clear previous entries so user gets a fresh screen
-    if (!isListening && entries.length > 0) {
-      setEntries([]);
-      setInterimTranscript('');
-      setInterimTranslation('');
-      setMeetingDuration(0);
-    }
+    // Always start with a fresh clean screen
+    setEntries([]);
+    setInterimTranscript('');
+    setInterimTranslation('');
+    setMeetingDuration(0);
     speechService.start(sourceLang);
   };
 

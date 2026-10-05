@@ -11,7 +11,7 @@ class SpeechService {
     this.recognition = null;
     this.isListening = false;
     this.userActive = false; // Strictly controlled by Start and Stop buttons
-    this.currentLanguage = 'ar';
+    this.currentLanguage = 'en';
     this.restartTimeout = null;
     this.silenceTimer = null;
     this.pauseDelayMs = 2800; // Natural meeting pause delay (2.8 seconds)
@@ -105,7 +105,7 @@ class SpeechService {
     }
   }
 
-  start(langCode = 'ar') {
+  start(langCode = 'en') {
     if (!this.SpeechRecognition) {
       console.warn('SpeechRecognition is not supported in this browser.');
       if (this.onError) {
@@ -266,15 +266,6 @@ class SpeechService {
     this.accumulatedSentence = '';
     this.lastInterim = '';
 
-    // Abort active recognition briefly so the browser flushes its internal speech buffers
-    if (this.recognition) {
-      try {
-        this.recognition.abort();
-      } catch (e) {
-        // ignore
-      }
-    }
-
     if (this.onResult) {
       this.onResult({
         transcript: sentenceToCommit,
@@ -328,11 +319,17 @@ class SpeechService {
 
     if (this.recognition) {
       try {
+        this.recognition.onresult = null;
+        this.recognition.onend = null;
+        this.recognition.onerror = null;
         this.recognition.stop();
       } catch (e) {
         // ignore
       }
+      this.recognition = null;
     }
+    this.accumulatedSentence = '';
+    this.lastInterim = '';
     this.stopAudioVisualizer();
     if (this.onStatusChange) this.onStatusChange('idle');
   }
