@@ -79,6 +79,7 @@ export function App() {
   const entriesRef = useRef(entries);
   const activeModeRef = useRef(activeMode);
   const interimDebounceRef = useRef(null);
+  const interimReqIdRef = useRef(0);
 
   // Check URL query parameters for Stripe checkout return (?tip=success or ?tip=cancelled)
   useEffect(() => {
@@ -176,15 +177,16 @@ export function App() {
         if (interimDebounceRef.current) {
           clearTimeout(interimDebounceRef.current);
         }
-        // Fast speculative translation for interim text — always uses fast basic mode, NEVER spams Gemini
+        const reqId = ++interimReqIdRef.current;
+        // Fast speculative translation for interim text (120ms debounce with latest-request guard)
         interimDebounceRef.current = setTimeout(() => {
           if (!isListeningRef.current || sessionIdRef.current !== currentSession) return;
           translationEngine.translate(transcript, currentSrc, currentTgt, 'basic').then((specTranslation) => {
-            if (isListeningRef.current && sessionIdRef.current === currentSession) {
+            if (isListeningRef.current && sessionIdRef.current === currentSession && reqId === interimReqIdRef.current) {
               setInterimTranslation(specTranslation);
             }
           });
-        }, 250);
+        }, 120);
       } else {
         if (interimDebounceRef.current) {
           clearTimeout(interimDebounceRef.current);

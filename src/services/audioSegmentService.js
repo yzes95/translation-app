@@ -73,7 +73,7 @@ class AudioSegmentService {
 
       const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
       const SILENCE_THRESHOLD = 8; // Out of 100 volume scale
-      const PAUSE_DURATION_MS = 1600; // 1.6s natural pause
+      const PAUSE_DURATION_MS = 900; // 0.9s responsive pause (keeps up with videos)
 
       this.volumeCheckInterval = setInterval(() => {
         if (!this.analyser || !this.isListening) return;
@@ -98,9 +98,9 @@ class AudioSegmentService {
             this.silenceTimer = null;
           }
 
-          // Safety auto-flush: If continuous speech exceeds 6 seconds, flush segment so sentences are translated in real-time and payload stays tiny
+          // Responsive auto-flush: If continuous speech exceeds 3.5 seconds, flush segment so video sentences stream continuously
           const elapsed = Date.now() - this.segmentStartTime;
-          if (elapsed >= 6000 && this.isListening) {
+          if (elapsed >= 3500 && this.isListening) {
             this.flush();
           }
         } else if (this.speechDetected && !this.silenceTimer) {

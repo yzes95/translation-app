@@ -181,7 +181,7 @@ app.post('/api/translate', async (req, res) => {
   // 2. Per-user Throttling (gracefully smooths fast speech without 429)
   const now = Date.now();
   const lastTime = userLastRequest.get(userId) || 0;
-  if (now - lastTime < 800) {
+  if (now - lastTime < 350) {
     return res.json({
       translatedText: '',
       fallback: true,
@@ -293,7 +293,7 @@ app.post('/api/translate-audio', express.json({ limit: '25mb' }), async (req, re
   // 2. Per-user throttling
   const now = Date.now();
   const lastTime = userLastRequest.get(userId) || 0;
-  if (now - lastTime < 1000) {
+  if (now - lastTime < 500) {
     return res.json({
       transcript: '',
       translatedText: '',

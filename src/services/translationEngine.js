@@ -149,10 +149,33 @@ export class TranslationEngine {
   async fetchSingleWebTranslation(queryText, src, tgt) {
     if (!queryText || src === tgt) return queryText;
 
-    // 1. MyMemory Neural Web API
+    // 1. Google Translate GTX (Fastest public neural API, ~50-120ms response time)
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4500);
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src}&tl=${tgt}&dt=t&q=${encodeURIComponent(queryText)}`;
+      const res = await fetch(gtxUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json) && json[0] && Array.isArray(json[0])) {
+          const combined = json[0]
+            .map((item) => item[0])
+            .filter(Boolean)
+            .join('');
+          if (combined && combined.toLowerCase() !== queryText.toLowerCase()) {
+            return combined;
+          }
+        }
+      }
+    } catch {
+      // Fall through to MyMemory
+    }
+
+    // 2. MyMemory Neural Web API (Reliable fallback if Google GTX is blocked)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
 
       const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(queryText)}&langpair=${src}|${tgt}`;
       const response = await fetch(url, { signal: controller.signal });
@@ -174,29 +197,6 @@ export class TranslationEngine {
       }
     } catch (err) {
       console.warn(`MyMemory failed for ${src} -> ${tgt}:`, err.message);
-    }
-
-    // 2. Secondary public translation fallback
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src}&tl=${tgt}&dt=t&q=${encodeURIComponent(queryText)}`;
-      const res = await fetch(gtxUrl, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        const json = await res.json();
-        if (Array.isArray(json) && json[0] && Array.isArray(json[0])) {
-          const combined = json[0]
-            .map((item) => item[0])
-            .filter(Boolean)
-            .join('');
-          if (combined && combined.toLowerCase() !== queryText.toLowerCase()) {
-            return combined;
-          }
-        }
-      }
-    } catch {
-      // Secondary fallback silently ignored if blocked by CORS or network
     }
 
     return '';

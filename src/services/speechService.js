@@ -14,7 +14,7 @@ class SpeechService {
     this.currentLanguage = 'en';
     this.restartTimeout = null;
     this.silenceTimer = null;
-    this.pauseDelayMs = 2200; // Natural meeting pause delay (2.2 seconds)
+    this.pauseDelayMs = 1000; // Responsive natural pause delay (1.0s, ideal for videos and conversation)
 
     // Conversational Accumulator: keeps full sentence intact across natural pauses
     this.accumulatedSentence = '';
@@ -38,7 +38,7 @@ class SpeechService {
   }
 
   setPauseDelay(seconds) {
-    this.pauseDelayMs = Math.max(1500, Math.min(6000, seconds * 1000));
+    this.pauseDelayMs = Math.max(600, Math.min(4000, seconds * 1000));
   }
 
   async initAudioVisualizer() {
@@ -208,7 +208,32 @@ class SpeechService {
         });
       }
 
-      // Reset sentence pause timer (2.2s natural meeting pause delay)
+      // Fast responsive sentence chunking for video subtitles and natural conversation:
+      // 1. Chrome finalized phrase and ends with punctuation (. ? ! ؟ 。)
+      // 2. Chrome finalized phrase and word count in accumulated sentence >= 7
+      // 3. Or continuous accumulated words >= 14 (prevents endless buildup in fast videos)
+      const words = this.accumulatedSentence ? this.accumulatedSentence.split(/\s+/).filter(Boolean) : [];
+      const hasPunctuation = /[.?!؟。]$/.test(this.accumulatedSentence);
+
+      if (finalTranscript.trim() && (hasPunctuation || words.length >= 7)) {
+        if (this.silenceTimer) {
+          clearTimeout(this.silenceTimer);
+          this.silenceTimer = null;
+        }
+        this.commitSentence();
+        return;
+      }
+
+      if (words.length >= 14) {
+        if (this.silenceTimer) {
+          clearTimeout(this.silenceTimer);
+          this.silenceTimer = null;
+        }
+        this.commitSentence();
+        return;
+      }
+
+      // Reset sentence pause timer (1.0s fast response for videos & conversations)
       if (this.silenceTimer) clearTimeout(this.silenceTimer);
 
       if (currentFullText) {
@@ -272,16 +297,6 @@ class SpeechService {
         isFinal: true,
         confidence: 0.95
       });
-    }
-
-    // Flush and reset Chrome recognition buffer so next sentence starts fresh
-    if (this.recognition && this.userActive) {
-      try {
-        this.recognition.onresult = null;
-        this.recognition.stop();
-      } catch (e) {
-        // ignore
-      }
     }
   }
 
