@@ -274,10 +274,6 @@ app.post('/api/translate-audio', express.json({ limit: '25mb' }), async (req, re
     return res.status(400).json({ error: 'Missing audio data' });
   }
 
-  if (sourceLang !== 'yo') {
-    return res.status(400).json({ error: 'Audio translation is currently reserved for Yoruba.' });
-  }
-
   // 1. Check daily quota
   const usage = getUserUsage(userId);
   if (usage.usedSeconds >= DAILY_LIMIT_SECONDS) {
@@ -309,13 +305,14 @@ app.post('/api/translate-audio', express.json({ limit: '25mb' }), async (req, re
     return res.status(400).json({ error: 'Audio payload too large (max 20MB)' });
   }
 
+  const srcName = LANGUAGE_NAMES[sourceLang] || sourceLang || 'Auto-detect';
   const tgtName = LANGUAGE_NAMES[targetLang] || targetLang || 'English';
 
   try {
     const chainResult = await runChain('translateAudio', {
       buffer,
       mimeType,
-      srcName: 'Yoruba',
+      srcName,
       tgtName
     });
 

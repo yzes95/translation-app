@@ -179,8 +179,13 @@ class SpeechService {
     }
 
     const langInfo = getLanguageByCode(this.currentLanguage);
+    const isMobile =
+      typeof navigator !== 'undefined' &&
+      /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
     this.recognition = new this.SpeechRecognition();
-    this.recognition.continuous = true;
+    // On Android / mobile browsers, Android SpeechRecognizer fails or aborts if continuous: true.
+    // Setting continuous = false on mobile allows single-shot recognition with graceful restart.
+    this.recognition.continuous = !isMobile;
     this.recognition.interimResults = true;
     this.recognition.lang = langInfo.speechCode || 'ar-EG';
     this.recognition.maxAlternatives = 1;
@@ -255,31 +260,48 @@ class SpeechService {
     };
 
     this.recognition.onerror = (event) => {
+      console.warn('SpeechRecognition error:', event.error);
       if (event.error === 'no-speech' || event.error === 'aborted') {
         return;
       }
-      console.warn('SpeechRecognition error:', event.error);
       if (event.error === 'audio-capture') {
         // If mic lock was encountered, release any visualizer mic stream and retry
         this.stopAudioVisualizer();
         setTimeout(() => {
           if (this.userActive) this.safeStart();
-        }, 300);
+        }, 350);
         return;
       }
-      if (event.error === 'not-allowed') {
+      if (event.error === 'network') {
+        // Android Google Speech Services network glitch, retry gracefully
+        setTimeout(() => {
+          if (this.userActive) this.safeStart();
+        }, 500);
+        return;
+      }
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         this.userActive = false;
         this.isListening = false;
         if (this.onStatusChange) this.onStatusChange('idle');
         if (this.onError) {
-          this.onError({ code: event.error, message: 'Microphone permission denied. Please allow microphone access in your browser or device settings.' });
+          this.onError({
+            code: event.error,
+            message: 'Microphone permission denied. Please allow microphone access in your browser or device settings.'
+          });
         }
       }
     };
 
     this.recognition.onend = () => {
+      // If there was any speech collected before ending, commit it
+      if (this.accumulatedSentence.trim() || this.lastInterim.trim()) {
+        this.commitSentence();
+      }
+
       if (this.userActive) {
         if (this.restartTimeout) clearTimeout(this.restartTimeout);
+        // On Android / mobile, allow 350ms for Android AudioRecord HAL to release before re-starting
+        const restartDelay = isMobile ? 350 : 80;
         this.restartTimeout = setTimeout(() => {
           if (this.userActive) {
             try {
@@ -289,7 +311,7 @@ class SpeechService {
               console.warn('Recognition restart note:', err);
             }
           }
-        }, 80);
+        }, restartDelay);
       } else {
         this.isListening = false;
         if (this.onStatusChange) this.onStatusChange('idle');

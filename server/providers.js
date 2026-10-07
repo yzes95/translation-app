@@ -55,9 +55,13 @@ Speech to translate:
 "${cleanText}"`;
 }
 
-// Shared audio interpreter prompt builder
+// Shared audio interpreter prompt builder (supports Yoruba and all other languages for universal audio fallback)
 export function buildAudioInterpreterPrompt(srcName, tgtName) {
-  return `The audio is spoken Yoruba. Transcribe it in Yoruba with correct tone marks, then translate it into ${tgtName}. If the audio is not Yoruba or is silent, return an empty transcript. Reply ONLY as valid JSON in this format:
+  if (srcName && srcName.toLowerCase() === 'yoruba') {
+    return `The audio is spoken Yoruba. Transcribe it in Yoruba with correct tone marks, then translate it into ${tgtName}. If the audio is not Yoruba or is silent, return an empty transcript. Reply ONLY as valid JSON in this format:
+{"transcript":"...","translation":"..."}`;
+  }
+  return `The audio contains spoken speech in ${srcName || 'the speaker language'}. Transcribe what was said accurately in ${srcName || 'original language'}, then translate it into ${tgtName}. If the audio is silent or unintelligible, return an empty transcript. Reply ONLY as valid JSON in this format:
 {"transcript":"...","translation":"..."}`;
 }
 

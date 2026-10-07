@@ -167,6 +167,13 @@ export function App() {
 
     speechService.onError = (err) => {
       console.warn('Speech recognition reported:', err);
+      const msg = typeof err === 'string' ? err : err?.message;
+      if (msg) {
+        setFallbackNotice(msg);
+        setTimeout(() => setFallbackNotice(null), 5000);
+      }
+      setIsListening(false);
+      isListeningRef.current = false;
     };
 
     speechService.onResult = async ({ transcript, isFinal }) => {
@@ -266,7 +273,15 @@ export function App() {
     setInterimTranslation('');
     setMeetingDuration(0);
 
-    if (sourceLang === 'yo') {
+    const isBrowserSTTSupported = speechService.isSupported();
+    const useAudioSegments = sourceLang === 'yo' || !isBrowserSTTSupported;
+
+    if (!isBrowserSTTSupported && sourceLang !== 'yo') {
+      setFallbackNotice("Browser speech recognition is not supported (e.g. Firefox). Auto-switched to AI Voice mode.");
+      setTimeout(() => setFallbackNotice(null), 5000);
+    }
+
+    if (useAudioSegments) {
       audioSegmentService.onVolumeChange = (vol) => setVolumeLevel(vol);
       audioSegmentService.onStatusChange = (status) => {
         const listening = status === 'listening';
@@ -275,6 +290,7 @@ export function App() {
       };
       audioSegmentService.start(async ({ blob, mimeType, durationSeconds }) => {
         if (sessionIdRef.current !== currentSession) return;
+        const currentSrc = sourceLangRef.current;
         const currentTgt = targetLangRef.current;
 
         const entryId = `entry-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
@@ -285,7 +301,7 @@ export function App() {
           id: entryId,
           speaker: `Speaker ${speakerNum}`,
           timestamp: timeNow,
-          text: '🎙️ Processing Yoruba audio...',
+          text: currentSrc === 'yo' ? '🎙️ Processing Yoruba audio...' : '🎙️ Processing speech audio...',
           translatedText: ''
         };
         setEntries((prev) => [...prev, initialEntry]);
@@ -294,7 +310,7 @@ export function App() {
           const result = await apiService.translateAudio({
             blob,
             mimeType,
-            sourceLang: 'yo',
+            sourceLang: currentSrc,
             targetLang: currentTgt,
             sessionDurationSeconds: durationSeconds
           });
@@ -303,7 +319,7 @@ export function App() {
 
           if (result.notYoruba) {
             setEntries((prev) => prev.filter((item) => item.id !== entryId));
-            setFallbackNotice("Didn't hear Yoruba speech. Please speak clearly in Yoruba.");
+            setFallbackNotice(currentSrc === 'yo' ? "Didn't hear Yoruba speech. Please speak clearly in Yoruba." : "Didn't hear speech clearly. Please try again.");
             setTimeout(() => setFallbackNotice(null), 4000);
             return;
           }
@@ -328,7 +344,7 @@ export function App() {
             setEntries((prev) => prev.filter((item) => item.id !== entryId));
           }
         } catch (err) {
-          console.error('Yoruba audio translation error:', err);
+          console.error('Audio translation error:', err);
           setEntries((prev) => prev.filter((item) => item.id !== entryId));
         }
       });
@@ -348,7 +364,8 @@ export function App() {
   };
 
   const handleFinishSentence = () => {
-    if (sourceLangRef.current === 'yo') {
+    const isBrowserSTTSupported = speechService.isSupported();
+    if (sourceLangRef.current === 'yo' || !isBrowserSTTSupported) {
       audioSegmentService.flush();
     } else {
       speechService.forceCommit();
@@ -358,17 +375,14 @@ export function App() {
   const handleSourceChange = (newLang) => {
     const oldLang = sourceLang;
     setSourceLang(newLang);
+    const isBrowserSTTSupported = speechService.isSupported();
     if (isListening) {
-      if (oldLang === 'yo' || newLang === 'yo') {
+      if (!isBrowserSTTSupported || oldLang === 'yo' || newLang === 'yo') {
         audioSegmentService.stop();
         speechService.stop();
         setTimeout(() => {
           if (isListeningRef.current) {
-            if (newLang === 'yo') {
-              handleStartListening();
-            } else {
-              speechService.start(newLang);
-            }
+            handleStartListening();
           }
         }, 150);
       } else {
@@ -382,17 +396,14 @@ export function App() {
     const oldTarget = targetLang;
     setSourceLang(oldTarget);
     setTargetLang(oldSource);
+    const isBrowserSTTSupported = speechService.isSupported();
     if (isListening) {
-      if (oldSource === 'yo' || oldTarget === 'yo') {
+      if (!isBrowserSTTSupported || oldSource === 'yo' || oldTarget === 'yo') {
         audioSegmentService.stop();
         speechService.stop();
         setTimeout(() => {
           if (isListeningRef.current) {
-            if (oldTarget === 'yo') {
-              handleStartListening();
-            } else {
-              speechService.start(oldTarget);
-            }
+            handleStartListening();
           }
         }, 150);
       } else {
