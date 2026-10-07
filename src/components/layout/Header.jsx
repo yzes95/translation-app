@@ -7,7 +7,8 @@ import {
   WifiOff,
   Smartphone,
   Heart,
-  Sparkles
+  Sparkles,
+  FileAudio
 } from 'lucide-react';
 
 export const Header = ({
@@ -16,6 +17,7 @@ export const Header = ({
   onOpenInstall,
   onOpenSupport,
   onOpenAIGuide,
+  onOpenLectureNotes,
   isListening,
   meetingDuration
 }) => {
@@ -74,6 +76,17 @@ export const Header = ({
 
         {/* Actions */}
         <div className="flex items-center space-x-1 sm:space-x-2 shrink-0">
+          {/* Lecture & Audio Notes Placeholder button */}
+          <button
+            onClick={onOpenLectureNotes}
+            className="flex items-center space-x-1 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 hover:text-white border border-violet-500/30 text-xs font-bold transition-all cursor-pointer"
+            title="Lecture & Audio File Transcriber (Upload / Memo)"
+          >
+            <FileAudio className="w-4 h-4 text-violet-400 shrink-0" />
+            <span className="hidden sm:inline">Lectures & Files</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-violet-500/30 text-[9px] text-violet-200 ml-0.5">Soon</span>
+          </button>
+
           {/* AI Setup / Guide button */}
           <button
             onClick={onOpenAIGuide}

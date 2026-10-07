@@ -43,6 +43,17 @@ class SpeechService {
 
   async initAudioVisualizer() {
     try {
+      // CRITICAL FOR ANDROID & SAMSUNG DEVICES:
+      // Android enforces an exclusive hardware microphone lock.
+      // If getUserMedia opens the mic, SpeechRecognition fails with 'audio-capture' or stays deaf.
+      // Therefore, on mobile devices we do NOT open getUserMedia, giving SpeechRecognition exclusive mic access.
+      const isMobile =
+        typeof navigator !== 'undefined' &&
+        /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
+      if (isMobile) {
+        return;
+      }
+
       if (this.audioContext && this.audioContext.state === 'running') {
         return;
       }
@@ -248,12 +259,20 @@ class SpeechService {
         return;
       }
       console.warn('SpeechRecognition error:', event.error);
+      if (event.error === 'audio-capture') {
+        // If mic lock was encountered, release any visualizer mic stream and retry
+        this.stopAudioVisualizer();
+        setTimeout(() => {
+          if (this.userActive) this.safeStart();
+        }, 300);
+        return;
+      }
       if (event.error === 'not-allowed') {
         this.userActive = false;
         this.isListening = false;
         if (this.onStatusChange) this.onStatusChange('idle');
         if (this.onError) {
-          this.onError({ code: event.error, message: 'Microphone permission denied.' });
+          this.onError({ code: event.error, message: 'Microphone permission denied. Please allow microphone access in your browser or device settings.' });
         }
       }
     };

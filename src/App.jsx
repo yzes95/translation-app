@@ -9,8 +9,10 @@ import { SettingsModal } from './components/settings/SettingsModal';
 import { InstallModal } from './components/install/InstallModal';
 import { SupportModal } from './components/support/SupportModal';
 import { AIKeyGuideModal } from './components/settings/AIKeyGuideModal';
+import { LectureNotesModal } from './components/lecture/LectureNotesModal';
 import { ModeSelector } from './components/meeting/ModeSelector';
 import { LiveTranslationOverlay } from './components/meeting/LiveTranslationOverlay';
+import { FileAudio } from 'lucide-react';
 
 import { speechService } from './services/speechService';
 import { audioSegmentService } from './services/audioSegmentService';
@@ -57,6 +59,7 @@ export function App() {
   const [isInstallOpen, setIsInstallOpen] = useState(false);
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [isAIGuideOpen, setIsAIGuideOpen] = useState(false);
+  const [isLectureModalOpen, setIsLectureModalOpen] = useState(false);
   const [pastMeetings, setPastMeetings] = useState([]);
   const [tipNotification, setTipNotification] = useState(null);
   const [fallbackNotice, setFallbackNotice] = useState(null);
@@ -512,6 +515,7 @@ export function App() {
         onOpenInstall={() => setIsInstallOpen(true)}
         onOpenSupport={() => setIsSupportOpen(true)}
         onOpenAIGuide={() => setIsAIGuideOpen(true)}
+        onOpenLectureNotes={() => setIsLectureModalOpen(true)}
         isListening={isListening}
         meetingDuration={meetingDuration}
       />
@@ -538,6 +542,33 @@ export function App() {
           onOpenSupport={() => setIsSupportOpen(true)}
           isListening={isListening}
         />
+
+        {/* Lecture & Audio File Mode Banner (Placeholder) */}
+        <div
+          onClick={() => setIsLectureModalOpen(true)}
+          className="w-full p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-violet-950/30 via-slate-900/80 to-indigo-950/30 border border-violet-500/25 hover:border-violet-500/50 text-left cursor-pointer transition-all hover:scale-[1.005] active:scale-[0.995] flex items-center justify-between group shadow-lg shadow-violet-950/10"
+        >
+          <div className="flex items-center space-x-3">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-violet-500/15 text-violet-400 flex items-center justify-center border border-violet-500/30 group-hover:scale-105 transition-transform shrink-0">
+              <FileAudio className="w-5 h-5 text-violet-400" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs sm:text-sm font-bold text-white">Audio / Video File & Lecture Notes</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                  Coming Soon
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 m-0 leading-relaxed">
+                Upload audio/video files or record voice memos offline — get full transcripts, translation, and structured lecture summaries.
+              </p>
+            </div>
+          </div>
+          <div className="text-xs font-semibold text-violet-400 group-hover:text-violet-300 group-hover:translate-x-1 transition-all flex items-center space-x-1 shrink-0 ml-3">
+            <span className="hidden sm:inline">Preview</span>
+            <span>&rarr;</span>
+          </div>
+        </div>
 
         {/* Live Audio & Meeting Control Bar */}
         <LiveControlBar
@@ -650,6 +681,12 @@ export function App() {
       <InstallModal
         isOpen={isInstallOpen}
         onClose={() => setIsInstallOpen(false)}
+      />
+
+      {/* Lecture & Audio File Transcriber Modal (Placeholder) */}
+      <LectureNotesModal
+        isOpen={isLectureModalOpen}
+        onClose={() => setIsLectureModalOpen(false)}
       />
 
       {/* Tip Feedback Notification Dialog */}

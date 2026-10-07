@@ -35,10 +35,15 @@ export const LanguageSelector = ({
               ))}
             </select>
           </div>
-          {sourceLang === 'yo' && (
+          {sourceLang === 'yo' ? (
             <div className="text-[11px] text-amber-400/90 flex items-center space-x-1 pt-0.5">
               <span>✨</span>
               <span>Yoruba voice uses multi-model AI audio (Gemini ➜ Groq ➜ Cloudflare)</span>
+            </div>
+          ) : (
+            <div className="text-[10px] text-slate-500 flex items-center space-x-1 pt-0.5">
+              <span>💡</span>
+              <span>Speak in native {SUPPORTED_LANGUAGES.find((l) => l.code === sourceLang)?.name || 'language'}. On iPhones, enable Dictation in iOS Settings for non-English speech.</span>
             </div>
           )}
         </div>
