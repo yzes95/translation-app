@@ -12,10 +12,15 @@ export const LiveControlBar = ({
   hasEntries,
   generateSummary,
   onProduceSummary,
-  isSummarizing
+  isSummarizing,
+  voiceEngine = 'browser',
+  onToggleVoiceEngine,
+  sourceLang
 }) => {
   // Generate 8 dynamic visualizer bars based on volume level
   const bars = [0.4, 0.7, 1.0, 0.8, 1.2, 0.9, 0.6, 0.3];
+
+  const isAIVoice = voiceEngine === 'ai_voice' || sourceLang === 'yo';
 
   return (
     <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl backdrop-blur-md">
@@ -42,9 +47,30 @@ export const LiveControlBar = ({
           </div>
 
           <div className="text-xs">
-            <span className="font-semibold text-slate-300 block">
-              {isListening ? 'Listening Continuously...' : 'Microphone Ready'}
-            </span>
+            <div className="flex items-center space-x-2">
+              <span className="font-semibold text-slate-300">
+                {isListening ? 'Listening Continuously...' : 'Microphone Ready'}
+              </span>
+              {onToggleVoiceEngine && (
+                <button
+                  type="button"
+                  onClick={onToggleVoiceEngine}
+                  disabled={isListening || sourceLang === 'yo'}
+                  className={`text-[10px] px-2 py-0.5 rounded-md border font-medium transition-all ${
+                    isAIVoice
+                      ? 'bg-purple-950/60 text-purple-300 border-purple-500/40 hover:bg-purple-900/60'
+                      : 'bg-blue-950/60 text-blue-300 border-blue-500/40 hover:bg-blue-900/60'
+                  } ${isListening ? 'opacity-70 cursor-default' : 'cursor-pointer active:scale-95'}`}
+                  title={
+                    sourceLang === 'yo'
+                      ? 'Yoruba always uses Universal AI Voice Engine'
+                      : 'Click to toggle Voice Engine (Browser Fast vs Universal AI Voice)'
+                  }
+                >
+                  {isAIVoice ? '🤖 AI Voice (Phone/Universal)' : '⚡ Browser Fast'}
+                </button>
+              )}
+            </div>
             <span className="text-[11px] text-slate-400">
               {isListening ? 'Speak at your own pace without rushing' : 'Click Start to listen'}
             </span>

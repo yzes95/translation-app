@@ -146,16 +146,24 @@ export class TranslationEngine {
     }
   }
 
-  async fetchSingleWebTranslation(queryText, src, tgt) {
+  async fetchSingleWebTranslation(queryText, src, tgt, externalSignal = null) {
     if (!queryText || src === tgt) return queryText;
+    if (externalSignal && externalSignal.aborted) return '';
 
     // 1. Google Translate GTX (Fastest public neural API, ~50-120ms response time)
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const onAbort = () => controller.abort();
+      if (externalSignal) {
+        externalSignal.addEventListener('abort', onAbort, { once: true });
+      }
+
       const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src}&tl=${tgt}&dt=t&q=${encodeURIComponent(queryText)}`;
       const res = await fetch(gtxUrl, { signal: controller.signal });
       clearTimeout(timeoutId);
+      if (externalSignal) externalSignal.removeEventListener('abort', onAbort);
+
       if (res.ok) {
         const json = await res.json();
         if (Array.isArray(json) && json[0] && Array.isArray(json[0])) {
@@ -172,14 +180,21 @@ export class TranslationEngine {
       // Fall through to MyMemory
     }
 
+    if (externalSignal && externalSignal.aborted) return '';
+
     // 2. MyMemory Neural Web API (Reliable fallback if Google GTX is blocked)
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const onAbort = () => controller.abort();
+      if (externalSignal) {
+        externalSignal.addEventListener('abort', onAbort, { once: true });
+      }
 
       const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(queryText)}&langpair=${src}|${tgt}`;
       const response = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
+      if (externalSignal) externalSignal.removeEventListener('abort', onAbort);
 
       if (response.ok) {
         const data = await response.json();
@@ -202,9 +217,10 @@ export class TranslationEngine {
     return '';
   }
 
-  async translate(text, sourceLang, targetLang, mode = 'basic') {
+  async translate(text, sourceLang, targetLang, mode = 'basic', externalSignal = null) {
     if (!text || !text.trim()) return '';
     if (sourceLang === targetLang) return text;
+    if (externalSignal && externalSignal.aborted) return '';
 
     const cleanText = text.trim();
     const cacheKey = `${mode}|${sourceLang}|${targetLang}|${cleanText.toLowerCase()}`;
@@ -269,15 +285,15 @@ export class TranslationEngine {
     const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
     if (isOnline) {
       // Direct attempt
-      let webResult = await this.fetchSingleWebTranslation(queryText, actualSource, targetLang);
+      let webResult = await this.fetchSingleWebTranslation(queryText, actualSource, targetLang, externalSignal);
 
       // Smart English Pivot: For non-English pairs (e.g. Urdu -> Ukrainian, Turkish -> Hindi)
       // If direct translation produced nothing or returned unchanged text, pivot through English
-      if (!webResult && actualSource !== 'en' && targetLang !== 'en') {
+      if (!webResult && actualSource !== 'en' && targetLang !== 'en' && (!externalSignal || !externalSignal.aborted)) {
         try {
-          const pivotToEn = await this.fetchSingleWebTranslation(queryText, actualSource, 'en');
-          if (pivotToEn && pivotToEn.toLowerCase() !== queryText.toLowerCase()) {
-            const finalFromEn = await this.fetchSingleWebTranslation(pivotToEn, 'en', targetLang);
+          const pivotToEn = await this.fetchSingleWebTranslation(queryText, actualSource, 'en', externalSignal);
+          if (pivotToEn && pivotToEn.toLowerCase() !== queryText.toLowerCase() && (!externalSignal || !externalSignal.aborted)) {
+            const finalFromEn = await this.fetchSingleWebTranslation(pivotToEn, 'en', targetLang, externalSignal);
             if (finalFromEn) {
               webResult = finalFromEn;
             }

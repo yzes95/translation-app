@@ -70,10 +70,25 @@ export function App() {
     ttsRate: 1.0
   });
 
+  // Voice Engine: 'browser' | 'ai_voice'
+  // Auto-detect: mobile devices (Android) and Firefox default to 'ai_voice' for 100% hardware compatibility
+  const [voiceEngine, setVoiceEngine] = useState(() => {
+    if (typeof navigator === 'undefined') return 'browser';
+    const isAndroid = /Android/i.test(navigator.userAgent || '');
+    const isFirefox = /Firefox/i.test(navigator.userAgent || '');
+    const hasNoSpeech = typeof window !== 'undefined' && !(window.SpeechRecognition || window.webkitSpeechRecognition);
+    return isAndroid || isFirefox || hasNoSpeech ? 'ai_voice' : 'browser';
+  });
+
   const timerRef = useRef(null);
   const currentMeetingIdRef = useRef(null);
   const isListeningRef = useRef(false);
   const sessionIdRef = useRef(0);
+  const voiceEngineRef = useRef(voiceEngine);
+
+  useEffect(() => {
+    voiceEngineRef.current = voiceEngine;
+  }, [voiceEngine]);
 
   // Maintain refs for live callback access without re-binding
   const sourceLangRef = useRef(sourceLang);
@@ -83,6 +98,9 @@ export function App() {
   const activeModeRef = useRef(activeMode);
   const interimDebounceRef = useRef(null);
   const interimReqIdRef = useRef(0);
+  const interimAbortControllerRef = useRef(null);
+  const latestInterimTranslationRef = useRef(null);
+  const startAIVoiceListeningRef = useRef(null);
 
   // Check URL query parameters for Stripe checkout return (?tip=success or ?tip=cancelled)
   useEffect(() => {
@@ -167,13 +185,21 @@ export function App() {
 
     speechService.onError = (err) => {
       console.warn('Speech recognition reported:', err);
-      const msg = typeof err === 'string' ? err : err?.message;
-      if (msg) {
-        setFallbackNotice(msg);
+      if (isListeningRef.current && startAIVoiceListeningRef.current) {
+        setVoiceEngine('ai_voice');
+        voiceEngineRef.current = 'ai_voice';
+        setFallbackNotice('Browser speech recognition unavailable. Auto-switched to Universal AI Voice Engine.');
         setTimeout(() => setFallbackNotice(null), 5000);
+        startAIVoiceListeningRef.current();
+      } else {
+        const msg = typeof err === 'string' ? err : err?.message;
+        if (msg) {
+          setFallbackNotice(msg);
+          setTimeout(() => setFallbackNotice(null), 5000);
+        }
+        setIsListening(false);
+        isListeningRef.current = false;
       }
-      setIsListening(false);
-      isListeningRef.current = false;
     };
 
     speechService.onResult = async ({ transcript, isFinal }) => {
@@ -187,54 +213,90 @@ export function App() {
         if (interimDebounceRef.current) {
           clearTimeout(interimDebounceRef.current);
         }
+        if (interimAbortControllerRef.current) {
+          interimAbortControllerRef.current.abort();
+        }
+        const abortController = new AbortController();
+        interimAbortControllerRef.current = abortController;
+
         const reqId = ++interimReqIdRef.current;
-        // Fast speculative translation for interim text (120ms debounce with latest-request guard)
-        interimDebounceRef.current = setTimeout(() => {
+        // Fast streaming speculative translation (260ms debounce, aborts stale in-flight requests)
+        interimDebounceRef.current = setTimeout(async () => {
           if (!isListeningRef.current || sessionIdRef.current !== currentSession) return;
-          translationEngine.translate(transcript, currentSrc, currentTgt, 'basic').then((specTranslation) => {
+          try {
+            const specTranslation = await translationEngine.translate(
+              transcript,
+              currentSrc,
+              currentTgt,
+              'basic',
+              abortController.signal
+            );
             if (isListeningRef.current && sessionIdRef.current === currentSession && reqId === interimReqIdRef.current) {
               setInterimTranslation(specTranslation);
+              latestInterimTranslationRef.current = { text: transcript, translation: specTranslation };
             }
-          });
-        }, 120);
+          } catch (e) {
+            // ignore abort errors
+          }
+        }, 260);
       } else {
         if (interimDebounceRef.current) {
           clearTimeout(interimDebounceRef.current);
           interimDebounceRef.current = null;
         }
+        if (interimAbortControllerRef.current) {
+          interimAbortControllerRef.current.abort();
+          interimAbortControllerRef.current = null;
+        }
         setInterimTranscript('');
         setInterimTranslation('');
+
+        // Immediate zero-latency translation if preview was already translated during speech
+        let immediateTranslation = '';
+        if (
+          latestInterimTranslationRef.current &&
+          (latestInterimTranslationRef.current.text === transcript ||
+            transcript.includes(latestInterimTranslationRef.current.text) ||
+            latestInterimTranslationRef.current.text.includes(transcript))
+        ) {
+          immediateTranslation = latestInterimTranslationRef.current.translation;
+        }
 
         const entryId = `entry-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
         const speakerNum = (entriesRef.current.length % 2) + 1;
         const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-        // Add entry immediately so user sees their transcription without waiting
+        // Add entry immediately with instant translated text if ready (ZERO LATENCY!)
         const initialEntry = {
           id: entryId,
           speaker: `Speaker ${speakerNum}`,
           timestamp: timeNow,
           text: transcript,
-          translatedText: ''
+          translatedText: immediateTranslation
         };
 
         if (sessionIdRef.current !== currentSession) return;
         setEntries((prev) => [...prev, initialEntry]);
 
-        // Translate in background and update entry
-        try {
-          const translatedText = await translationEngine.translate(transcript, currentSrc, currentTgt, activeModeRef.current);
-          if (sessionIdRef.current === currentSession) {
-            setEntries((prev) =>
-              prev.map((item) => (item.id === entryId ? { ...item, translatedText: translatedText } : item))
-            );
+        // If in Smart / Unlimited AI mode, or if immediate translation was not ready, refine translation
+        const mode = activeModeRef.current;
+        if (!immediateTranslation || mode !== 'basic') {
+          translationEngine
+            .translate(transcript, currentSrc, currentTgt, mode)
+            .then((translatedText) => {
+              if (sessionIdRef.current === currentSession && translatedText) {
+                setEntries((prev) =>
+                  prev.map((item) => (item.id === entryId ? { ...item, translatedText: translatedText } : item))
+                );
 
-            if (settingsRef.current.autoTTS && translatedText) {
-              ttsService.speak(translatedText, currentTgt, { rate: settingsRef.current.ttsRate });
-            }
-          }
-        } catch (err) {
-          console.error('Translation error:', err);
+                if (settingsRef.current.autoTTS && translatedText) {
+                  ttsService.speak(translatedText, currentTgt, { rate: settingsRef.current.ttsRate });
+                }
+              }
+            })
+            .catch((err) => console.error('Translation error:', err));
+        } else if (immediateTranslation && settingsRef.current.autoTTS) {
+          ttsService.speak(immediateTranslation, currentTgt, { rate: settingsRef.current.ttsRate });
         }
       }
     };
@@ -262,7 +324,96 @@ export function App() {
     };
   }, [isListening]);
 
-  // Controls
+  // Controls & Voice Engine
+  const startAIVoiceListening = (customSession) => {
+    const session = customSession || sessionIdRef.current;
+    audioSegmentService.onVolumeChange = (vol) => setVolumeLevel(vol);
+    audioSegmentService.onStatusChange = (status) => {
+      const listening = status === 'listening';
+      setIsListening(listening);
+      isListeningRef.current = listening;
+    };
+    audioSegmentService.onError = (err) => {
+      console.warn('AI Voice service error:', err);
+      setIsListening(false);
+      isListeningRef.current = false;
+      if (err?.message) {
+        setFallbackNotice(err.message);
+        setTimeout(() => setFallbackNotice(null), 5000);
+      }
+    };
+
+    audioSegmentService.start(async ({ blob, mimeType, durationSeconds }) => {
+      if (sessionIdRef.current !== session) return;
+      const currentSrc = sourceLangRef.current;
+      const currentTgt = targetLangRef.current;
+
+      const entryId = `entry-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+      const speakerNum = (entriesRef.current.length % 2) + 1;
+      const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      const initialEntry = {
+        id: entryId,
+        speaker: `Speaker ${speakerNum}`,
+        timestamp: timeNow,
+        text: '🎙️ Processing speech clip...',
+        translatedText: ''
+      };
+      setEntries((prev) => [...prev, initialEntry]);
+
+      try {
+        const result = await apiService.translateAudio({
+          blob,
+          mimeType,
+          sourceLang: currentSrc,
+          targetLang: currentTgt,
+          sessionDurationSeconds: durationSeconds
+        });
+
+        if (sessionIdRef.current !== session) return;
+
+        if (result.notYoruba && currentSrc === 'yo') {
+          setEntries((prev) => prev.filter((item) => item.id !== entryId));
+          setFallbackNotice("Didn't hear Yoruba speech. Please speak clearly in Yoruba.");
+          setTimeout(() => setFallbackNotice(null), 4000);
+          return;
+        }
+
+        if (result.transcript && result.translatedText) {
+          setEntries((prev) =>
+            prev.map((item) =>
+              item.id === entryId
+                ? { ...item, text: result.transcript, translatedText: result.translatedText }
+                : item
+            )
+          );
+
+          if (settingsRef.current.autoTTS && result.translatedText) {
+            ttsService.speak(result.translatedText, currentTgt, { rate: settingsRef.current.ttsRate });
+          }
+        } else if (result.fallback && result.message) {
+          setEntries((prev) => prev.filter((item) => item.id !== entryId));
+          setFallbackNotice(result.message);
+          setTimeout(() => setFallbackNotice(null), 5000);
+        } else {
+          setEntries((prev) => prev.filter((item) => item.id !== entryId));
+        }
+      } catch (err) {
+        console.error('Audio translation error:', err);
+        setEntries((prev) => prev.filter((item) => item.id !== entryId));
+      }
+    });
+  };
+
+  useEffect(() => {
+    startAIVoiceListeningRef.current = startAIVoiceListening;
+  });
+
+  const handleToggleVoiceEngine = () => {
+    if (isListening) return;
+    setVoiceEngine((prev) => (prev === 'ai_voice' ? 'browser' : 'ai_voice'));
+  };
+
   const handleStartListening = () => {
     // Always start with a fresh clean screen and new session ID
     sessionIdRef.current += 1;
@@ -274,80 +425,17 @@ export function App() {
     setMeetingDuration(0);
 
     const isBrowserSTTSupported = speechService.isSupported();
-    const useAudioSegments = sourceLang === 'yo' || !isBrowserSTTSupported;
+    const shouldUseAIVoice =
+      sourceLang === 'yo' ||
+      voiceEngineRef.current === 'ai_voice' ||
+      !isBrowserSTTSupported;
 
-    if (!isBrowserSTTSupported && sourceLang !== 'yo') {
-      setFallbackNotice("Browser speech recognition is not supported (e.g. Firefox). Auto-switched to AI Voice mode.");
-      setTimeout(() => setFallbackNotice(null), 5000);
-    }
-
-    if (useAudioSegments) {
-      audioSegmentService.onVolumeChange = (vol) => setVolumeLevel(vol);
-      audioSegmentService.onStatusChange = (status) => {
-        const listening = status === 'listening';
-        setIsListening(listening);
-        isListeningRef.current = listening;
-      };
-      audioSegmentService.start(async ({ blob, mimeType, durationSeconds }) => {
-        if (sessionIdRef.current !== currentSession) return;
-        const currentSrc = sourceLangRef.current;
-        const currentTgt = targetLangRef.current;
-
-        const entryId = `entry-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-        const speakerNum = (entriesRef.current.length % 2) + 1;
-        const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-        const initialEntry = {
-          id: entryId,
-          speaker: `Speaker ${speakerNum}`,
-          timestamp: timeNow,
-          text: currentSrc === 'yo' ? '🎙️ Processing Yoruba audio...' : '🎙️ Processing speech audio...',
-          translatedText: ''
-        };
-        setEntries((prev) => [...prev, initialEntry]);
-
-        try {
-          const result = await apiService.translateAudio({
-            blob,
-            mimeType,
-            sourceLang: currentSrc,
-            targetLang: currentTgt,
-            sessionDurationSeconds: durationSeconds
-          });
-
-          if (sessionIdRef.current !== currentSession) return;
-
-          if (result.notYoruba) {
-            setEntries((prev) => prev.filter((item) => item.id !== entryId));
-            setFallbackNotice(currentSrc === 'yo' ? "Didn't hear Yoruba speech. Please speak clearly in Yoruba." : "Didn't hear speech clearly. Please try again.");
-            setTimeout(() => setFallbackNotice(null), 4000);
-            return;
-          }
-
-          if (result.transcript && result.translatedText) {
-            setEntries((prev) =>
-              prev.map((item) =>
-                item.id === entryId
-                  ? { ...item, text: result.transcript, translatedText: result.translatedText }
-                  : item
-              )
-            );
-
-            if (settingsRef.current.autoTTS && result.translatedText) {
-              ttsService.speak(result.translatedText, currentTgt, { rate: settingsRef.current.ttsRate });
-            }
-          } else if (result.fallback && result.message) {
-            setEntries((prev) => prev.filter((item) => item.id !== entryId));
-            setFallbackNotice(result.message);
-            setTimeout(() => setFallbackNotice(null), 5000);
-          } else {
-            setEntries((prev) => prev.filter((item) => item.id !== entryId));
-          }
-        } catch (err) {
-          console.error('Audio translation error:', err);
-          setEntries((prev) => prev.filter((item) => item.id !== entryId));
-        }
-      });
+    if (shouldUseAIVoice) {
+      if (voiceEngineRef.current !== 'ai_voice') {
+        setVoiceEngine('ai_voice');
+        voiceEngineRef.current = 'ai_voice';
+      }
+      startAIVoiceListening(currentSession);
     } else {
       speechService.start(sourceLang);
     }
@@ -357,6 +445,14 @@ export function App() {
     isListeningRef.current = false;
     speechService.stop();
     audioSegmentService.stop();
+    if (interimDebounceRef.current) {
+      clearTimeout(interimDebounceRef.current);
+      interimDebounceRef.current = null;
+    }
+    if (interimAbortControllerRef.current) {
+      interimAbortControllerRef.current.abort();
+      interimAbortControllerRef.current = null;
+    }
     // Auto produce summary if enabled and entries exist
     if (generateSummary && entries.length > 0) {
       handleProduceSummary();
@@ -365,7 +461,7 @@ export function App() {
 
   const handleFinishSentence = () => {
     const isBrowserSTTSupported = speechService.isSupported();
-    if (sourceLangRef.current === 'yo' || !isBrowserSTTSupported) {
+    if (voiceEngineRef.current === 'ai_voice' || sourceLangRef.current === 'yo' || !isBrowserSTTSupported) {
       audioSegmentService.flush();
     } else {
       speechService.forceCommit();
@@ -377,7 +473,7 @@ export function App() {
     setSourceLang(newLang);
     const isBrowserSTTSupported = speechService.isSupported();
     if (isListening) {
-      if (!isBrowserSTTSupported || oldLang === 'yo' || newLang === 'yo') {
+      if (voiceEngineRef.current === 'ai_voice' || !isBrowserSTTSupported || oldLang === 'yo' || newLang === 'yo') {
         audioSegmentService.stop();
         speechService.stop();
         setTimeout(() => {
@@ -398,7 +494,7 @@ export function App() {
     setTargetLang(oldSource);
     const isBrowserSTTSupported = speechService.isSupported();
     if (isListening) {
-      if (!isBrowserSTTSupported || oldSource === 'yo' || oldTarget === 'yo') {
+      if (voiceEngineRef.current === 'ai_voice' || !isBrowserSTTSupported || oldSource === 'yo' || oldTarget === 'yo') {
         audioSegmentService.stop();
         speechService.stop();
         setTimeout(() => {
@@ -594,6 +690,9 @@ export function App() {
           generateSummary={generateSummary}
           onProduceSummary={handleProduceSummary}
           isSummarizing={isSummarizing}
+          voiceEngine={voiceEngine}
+          onToggleVoiceEngine={handleToggleVoiceEngine}
+          sourceLang={sourceLang}
         />
 
         {/* Live Transcript & Translation Feed */}

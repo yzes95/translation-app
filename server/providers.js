@@ -204,7 +204,7 @@ const geminiProvider = {
       transcript,
       translatedText: translation,
       modelUsed: `gemini:${model}`,
-      notYoruba: !transcript || transcript.length < 2
+      notYoruba: (!transcript || transcript.length < 2) && (srcName && srcName.toLowerCase() === 'yoruba')
     };
   }
 };
@@ -269,7 +269,9 @@ const groqProvider = {
     const audioBlob = new Blob([buffer], { type: mimeType || 'audio/webm' });
     formData.append('file', audioBlob, 'audio.webm');
     formData.append('model', 'whisper-large-v3');
-    formData.append('language', 'yo');
+    if (srcName && srcName.toLowerCase() === 'yoruba') {
+      formData.append('language', 'yo');
+    }
     formData.append('response_format', 'json');
     formData.append('temperature', '0');
 
@@ -299,15 +301,15 @@ const groqProvider = {
         transcript: '',
         translatedText: '',
         modelUsed: 'groq:whisper-large-v3',
-        notYoruba: true
+        notYoruba: srcName && srcName.toLowerCase() === 'yoruba'
       };
     }
 
     // Step 2: Groq Llama translation
-    const dialectContext = getDialectContext('yo', tgtName);
+    const dialectContext = getDialectContext(srcName || 'auto', tgtName);
     const translationResult = await groqProvider.translateText({
       text: transcript,
-      srcName: 'Yoruba',
+      srcName: srcName || 'Auto-detect',
       tgtName,
       dialectContext
     });

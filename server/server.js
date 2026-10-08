@@ -106,6 +106,7 @@ const CACHE_MAX_ITEMS = 600;
 
 // Per-user request throttling (prevents accidental speech spam from exceeding 15 RPM)
 const userLastRequest = new Map();
+const userLastAudioRequest = new Map();
 
 // -------------------------------------------------------------
 // 0. Root Status Endpoint
@@ -286,19 +287,19 @@ app.post('/api/translate-audio', express.json({ limit: '25mb' }), async (req, re
     });
   }
 
-  // 2. Per-user throttling
+  // 2. Per-user audio throttling (independent from text translation)
   const now = Date.now();
-  const lastTime = userLastRequest.get(userId) || 0;
-  if (now - lastTime < 500) {
+  const lastTime = userLastAudioRequest.get(userId) || 0;
+  if (now - lastTime < 150) {
     return res.json({
       transcript: '',
       translatedText: '',
       fallback: true,
       rateLimited: true,
-      message: 'Speaking pace fast. Waiting for audio buffer.'
+      message: 'Speaking pace fast. Buffering audio.'
     });
   }
-  userLastRequest.set(userId, now);
+  userLastAudioRequest.set(userId, now);
 
   const buffer = Buffer.from(audioBase64, 'base64');
   if (buffer.length > 20 * 1024 * 1024) {
@@ -316,7 +317,7 @@ app.post('/api/translate-audio', express.json({ limit: '25mb' }), async (req, re
       tgtName
     });
 
-    if (chainResult.notYoruba) {
+    if (chainResult.notYoruba && sourceLang === 'yo') {
       return res.json({
         transcript: '',
         translatedText: '',

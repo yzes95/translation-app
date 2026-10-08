@@ -196,66 +196,89 @@ class SpeechService {
     };
 
     this.recognition.onresult = (event) => {
+      let newlyFinalized = '';
       let interimTranscript = '';
-      let finalTranscript = '';
 
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         const item = event.results[i];
         if (item.isFinal) {
-          finalTranscript += item[0].transcript;
+          newlyFinalized += item[0].transcript + ' ';
         } else {
           interimTranscript += item[0].transcript;
         }
       }
 
-      if (finalTranscript.trim()) {
-        this.accumulatedSentence = (this.accumulatedSentence + ' ' + finalTranscript.trim()).trim();
-      }
-
+      newlyFinalized = newlyFinalized.trim();
       this.lastInterim = interimTranscript.trim();
-      const currentFullText = (this.accumulatedSentence + ' ' + this.lastInterim).trim();
 
-      // Emit live text update for interim display
-      if (this.onResult && currentFullText) {
-        this.onResult({
-          transcript: currentFullText,
-          isFinal: false,
-          confidence: 0.85
-        });
-      }
-
-      // Fast responsive sentence chunking for video subtitles and natural conversation:
-      // 1. Chrome finalized phrase and ends with punctuation (. ? ! ؟ 。)
-      // 2. Chrome finalized phrase and word count in accumulated sentence >= 7
-      // 3. Or continuous accumulated words >= 14 (prevents endless buildup in fast videos)
-      const words = this.accumulatedSentence ? this.accumulatedSentence.split(/\s+/).filter(Boolean) : [];
-      const hasPunctuation = /[.?!؟。]$/.test(this.accumulatedSentence);
-
-      if (finalTranscript.trim() && (hasPunctuation || words.length >= 7)) {
+      // 1. Instant Commit: If Chrome finalized an utterance chunk, commit IMMEDIATELY! Zero delay!
+      if (newlyFinalized) {
         if (this.silenceTimer) {
           clearTimeout(this.silenceTimer);
           this.silenceTimer = null;
         }
-        this.commitSentence();
-        return;
-      }
-
-      if (words.length >= 14) {
-        if (this.silenceTimer) {
-          clearTimeout(this.silenceTimer);
-          this.silenceTimer = null;
+        if (this.onResult) {
+          this.onResult({
+            transcript: newlyFinalized,
+            isFinal: true,
+            confidence: 0.95
+          });
         }
-        this.commitSentence();
-        return;
       }
 
-      // Reset sentence pause timer (1.0s fast response for videos & conversations)
-      if (this.silenceTimer) clearTimeout(this.silenceTimer);
+      // 2. Live Streaming Subtitle & Rolling Chunker (YouTube-style):
+      if (this.lastInterim) {
+        // Emit live interim text for the real-time subtitle preview
+        if (this.onResult) {
+          this.onResult({
+            transcript: this.lastInterim,
+            isFinal: false,
+            confidence: 0.85
+          });
+        }
 
-      if (currentFullText) {
+        // Rolling phrase break for non-stop continuous speech:
+        // If someone speaks continuously without pausing, Chrome holds all audio in interim.
+        // Once 9 words or punctuation are spoken, commit the completed phrase so the stream
+        // rolls forward continuously and NEVER gets stuck or builds up a 50-word monster block!
+        const words = this.lastInterim.split(/\s+/).filter(Boolean);
+        const hasPunctuation = /[.?!؟。]$/.test(this.lastInterim);
+
+        if (hasPunctuation || words.length >= 9) {
+          if (this.silenceTimer) {
+            clearTimeout(this.silenceTimer);
+            this.silenceTimer = null;
+          }
+          const chunkToCommit = this.lastInterim;
+          this.lastInterim = '';
+          if (this.onResult) {
+            this.onResult({
+              transcript: chunkToCommit,
+              isFinal: true,
+              confidence: 0.92
+            });
+          }
+          this.restartRecognitionClean();
+          return;
+        }
+
+        // Fast natural pause timer (550ms): If speaker pauses, finalize without making them wait 1-2 seconds
+        if (this.silenceTimer) clearTimeout(this.silenceTimer);
         this.silenceTimer = setTimeout(() => {
-          this.commitSentence();
-        }, this.pauseDelayMs);
+          this.silenceTimer = null;
+          if (this.lastInterim) {
+            const chunkToCommit = this.lastInterim;
+            this.lastInterim = '';
+            if (this.onResult) {
+              this.onResult({
+                transcript: chunkToCommit,
+                isFinal: true,
+                confidence: 0.92
+              });
+            }
+            this.restartRecognitionClean();
+          }
+        }, 550);
       }
     };
 
@@ -265,18 +288,16 @@ class SpeechService {
         return;
       }
       if (event.error === 'audio-capture') {
-        // If mic lock was encountered, release any visualizer mic stream and retry
         this.stopAudioVisualizer();
         setTimeout(() => {
           if (this.userActive) this.safeStart();
-        }, 350);
+        }, 300);
         return;
       }
       if (event.error === 'network') {
-        // Android Google Speech Services network glitch, retry gracefully
         setTimeout(() => {
           if (this.userActive) this.safeStart();
-        }, 500);
+        }, 400);
         return;
       }
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
@@ -286,21 +307,27 @@ class SpeechService {
         if (this.onError) {
           this.onError({
             code: event.error,
-            message: 'Microphone permission denied. Please allow microphone access in your browser or device settings.'
+            message: 'Browser speech recognition unavailable or blocked. Auto-switching to AI Voice engine.'
           });
         }
       }
     };
 
     this.recognition.onend = () => {
-      // If there was any speech collected before ending, commit it
-      if (this.accumulatedSentence.trim() || this.lastInterim.trim()) {
-        this.commitSentence();
+      if (this.lastInterim.trim()) {
+        const chunkToCommit = this.lastInterim.trim();
+        this.lastInterim = '';
+        if (this.onResult) {
+          this.onResult({
+            transcript: chunkToCommit,
+            isFinal: true,
+            confidence: 0.92
+          });
+        }
       }
 
       if (this.userActive) {
         if (this.restartTimeout) clearTimeout(this.restartTimeout);
-        // On Android / mobile, allow 350ms for Android AudioRecord HAL to release before re-starting
         const restartDelay = isMobile ? 350 : 80;
         this.restartTimeout = setTimeout(() => {
           if (this.userActive) {
@@ -319,26 +346,38 @@ class SpeechService {
     };
   }
 
+  restartRecognitionClean() {
+    if (!this.userActive) return;
+    try {
+      this.recognition.onend = null;
+      this.recognition.onerror = null;
+      this.recognition.abort();
+    } catch (_) {}
+    this.lastInterim = '';
+    setTimeout(() => {
+      if (this.userActive) {
+        this.setupRecognitionInstance();
+        this.safeStart();
+      }
+    }, 50);
+  }
+
   commitSentence() {
     if (this.silenceTimer) {
       clearTimeout(this.silenceTimer);
       this.silenceTimer = null;
     }
-
-    // Combine any finalized words and actively streaming interim words
-    const sentenceToCommit = (this.accumulatedSentence + ' ' + (this.lastInterim || '')).trim();
-    if (!sentenceToCommit) return;
-
-    this.accumulatedSentence = '';
+    const toCommit = (this.lastInterim || '').trim();
+    if (!toCommit) return;
     this.lastInterim = '';
-
     if (this.onResult) {
       this.onResult({
-        transcript: sentenceToCommit,
+        transcript: toCommit,
         isFinal: true,
         confidence: 0.95
       });
     }
+    this.restartRecognitionClean();
   }
 
   forceCommit() {
