@@ -71,13 +71,13 @@ export function App() {
   });
 
   // Voice Engine: 'browser' | 'ai_voice'
-  // Auto-detect: mobile devices (Android) and Firefox default to 'ai_voice' for 100% hardware compatibility
+  // Auto-detect: browsers with native Web Speech API default to 'browser' for instant live streaming
+  // Browsers without Web Speech API (like Firefox) default to 'ai_voice'
   const [voiceEngine, setVoiceEngine] = useState(() => {
     if (typeof navigator === 'undefined') return 'browser';
-    const isAndroid = /Android/i.test(navigator.userAgent || '');
     const isFirefox = /Firefox/i.test(navigator.userAgent || '');
     const hasNoSpeech = typeof window !== 'undefined' && !(window.SpeechRecognition || window.webkitSpeechRecognition);
-    return isAndroid || isFirefox || hasNoSpeech ? 'ai_voice' : 'browser';
+    return isFirefox || hasNoSpeech ? 'ai_voice' : 'browser';
   });
 
   const timerRef = useRef(null);
@@ -220,7 +220,7 @@ export function App() {
         interimAbortControllerRef.current = abortController;
 
         const reqId = ++interimReqIdRef.current;
-        // Fast streaming speculative translation (260ms debounce, aborts stale in-flight requests)
+        // Fast streaming speculative translation (130ms debounce for true real-time subtitles)
         interimDebounceRef.current = setTimeout(async () => {
           if (!isListeningRef.current || sessionIdRef.current !== currentSession) return;
           try {
@@ -238,7 +238,7 @@ export function App() {
           } catch (e) {
             // ignore abort errors
           }
-        }, 260);
+        }, 130);
       } else {
         if (interimDebounceRef.current) {
           clearTimeout(interimDebounceRef.current);
@@ -414,7 +414,7 @@ export function App() {
     setVoiceEngine((prev) => (prev === 'ai_voice' ? 'browser' : 'ai_voice'));
   };
 
-  const handleStartListening = () => {
+  const handleStartListening = async () => {
     // Always start with a fresh clean screen and new session ID
     sessionIdRef.current += 1;
     const currentSession = sessionIdRef.current;
@@ -437,6 +437,9 @@ export function App() {
       }
       startAIVoiceListening(currentSession);
     } else {
+      // Actively confirm hardware mic permission on mobile and browser
+      await speechService.requestMicPermission();
+      if (!isListeningRef.current || sessionIdRef.current !== currentSession) return;
       speechService.start(sourceLang);
     }
   };

@@ -167,11 +167,28 @@ class SpeechService {
     }
   }
 
+  async requestMicPermission() {
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Immediately release mic stream tracks so recognition has exclusive access
+        stream.getTracks().forEach((track) => track.stop());
+        return true;
+      } catch (err) {
+        console.warn('Microphone permission request failed:', err);
+        return false;
+      }
+    }
+    return true;
+  }
+
   setupRecognitionInstance() {
     if (this.recognition) {
       try {
         this.recognition.onend = null;
         this.recognition.onerror = null;
+        this.recognition.onresult = null;
+        this.recognition.onstart = null;
         this.recognition.abort();
       } catch (e) {
         // ignore
@@ -183,9 +200,8 @@ class SpeechService {
       typeof navigator !== 'undefined' &&
       /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
     this.recognition = new this.SpeechRecognition();
-    // On Android / mobile browsers, Android SpeechRecognizer fails or aborts if continuous: true.
-    // Setting continuous = false on mobile allows single-shot recognition with graceful restart.
-    this.recognition.continuous = !isMobile;
+    // Continuous is true across all platforms to ensure seamless real-time listening without clipping words
+    this.recognition.continuous = true;
     this.recognition.interimResults = true;
     this.recognition.lang = langInfo.speechCode || 'ar-EG';
     this.recognition.maxAlternatives = 1;
@@ -211,7 +227,7 @@ class SpeechService {
       newlyFinalized = newlyFinalized.trim();
       this.lastInterim = interimTranscript.trim();
 
-      // 1. Instant Commit: If Chrome finalized an utterance chunk, commit IMMEDIATELY! Zero delay!
+      // 1. Instant Commit: When the speech model finalizes a phrase, commit immediately!
       if (newlyFinalized) {
         if (this.silenceTimer) {
           clearTimeout(this.silenceTimer);
@@ -226,9 +242,8 @@ class SpeechService {
         }
       }
 
-      // 2. Live Streaming Subtitle & Rolling Chunker (YouTube-style):
+      // 2. Real-time Live Interim Stream (Zero latency live words as you speak):
       if (this.lastInterim) {
-        // Emit live interim text for the real-time subtitle preview
         if (this.onResult) {
           this.onResult({
             transcript: this.lastInterim,
@@ -237,36 +252,12 @@ class SpeechService {
           });
         }
 
-        // Rolling phrase break for non-stop continuous speech:
-        // If someone speaks continuously without pausing, Chrome holds all audio in interim.
-        // Once 9 words or punctuation are spoken, commit the completed phrase so the stream
-        // rolls forward continuously and NEVER gets stuck or builds up a 50-word monster block!
-        const words = this.lastInterim.split(/\s+/).filter(Boolean);
-        const hasPunctuation = /[.?!؟。]$/.test(this.lastInterim);
-
-        if (hasPunctuation || words.length >= 9) {
-          if (this.silenceTimer) {
-            clearTimeout(this.silenceTimer);
-            this.silenceTimer = null;
-          }
-          const chunkToCommit = this.lastInterim;
-          this.lastInterim = '';
-          if (this.onResult) {
-            this.onResult({
-              transcript: chunkToCommit,
-              isFinal: true,
-              confidence: 0.92
-            });
-          }
-          this.restartRecognitionClean();
-          return;
-        }
-
-        // Fast natural pause timer (550ms): If speaker pauses, finalize without making them wait 1-2 seconds
+        // Natural pause timer (700ms): If the speaker pauses, commit the interim text as final
+        // WITHOUT aborting or stopping the mic! The microphone stays open continuously.
         if (this.silenceTimer) clearTimeout(this.silenceTimer);
         this.silenceTimer = setTimeout(() => {
           this.silenceTimer = null;
-          if (this.lastInterim) {
+          if (this.lastInterim && this.userActive) {
             const chunkToCommit = this.lastInterim;
             this.lastInterim = '';
             if (this.onResult) {
@@ -276,9 +267,8 @@ class SpeechService {
                 confidence: 0.92
               });
             }
-            this.restartRecognitionClean();
           }
-        }, 550);
+        }, 700);
       }
     };
 
@@ -307,7 +297,7 @@ class SpeechService {
         if (this.onError) {
           this.onError({
             code: event.error,
-            message: 'Browser speech recognition unavailable or blocked. Auto-switching to AI Voice engine.'
+            message: 'Browser speech recognition unavailable. Auto-switching to AI Voice engine.'
           });
         }
       }
@@ -328,7 +318,7 @@ class SpeechService {
 
       if (this.userActive) {
         if (this.restartTimeout) clearTimeout(this.restartTimeout);
-        const restartDelay = isMobile ? 350 : 80;
+        const restartDelay = isMobile ? 150 : 60;
         this.restartTimeout = setTimeout(() => {
           if (this.userActive) {
             try {
@@ -346,22 +336,6 @@ class SpeechService {
     };
   }
 
-  restartRecognitionClean() {
-    if (!this.userActive) return;
-    try {
-      this.recognition.onend = null;
-      this.recognition.onerror = null;
-      this.recognition.abort();
-    } catch (_) {}
-    this.lastInterim = '';
-    setTimeout(() => {
-      if (this.userActive) {
-        this.setupRecognitionInstance();
-        this.safeStart();
-      }
-    }, 50);
-  }
-
   commitSentence() {
     if (this.silenceTimer) {
       clearTimeout(this.silenceTimer);
@@ -377,7 +351,6 @@ class SpeechService {
         confidence: 0.95
       });
     }
-    this.restartRecognitionClean();
   }
 
   forceCommit() {

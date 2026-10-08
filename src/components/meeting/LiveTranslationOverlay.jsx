@@ -74,8 +74,12 @@ export const LiveTranslationOverlay = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Determine active translation vs previous sentence for Subtitle Mode
-  const isSpeakingNow = !!interimTranscript;
+  // Determine persistent active translation vs previous sentence for Subtitle Mode
+  const hasHistory = entries.length > 0;
+  const isSpeakingNow = Boolean(interimTranscript);
+
+  const lastEntry = hasHistory ? entries[entries.length - 1] : null;
+  const prevEntry = entries.length > 1 ? entries[entries.length - 2] : null;
 
   let activeTranslation = '';
   let activeOriginal = '';
@@ -83,22 +87,19 @@ export const LiveTranslationOverlay = ({
   let previousOriginal = '';
 
   if (isSpeakingNow) {
-    activeTranslation = interimTranslation || '...';
+    // When actively speaking: prioritize live interim translation!
+    // If interim translation is still computing, fallback to previous finished translation or interim text preview
+    activeTranslation = interimTranslation || (lastEntry?.translatedText ? lastEntry.translatedText : interimTranscript);
     activeOriginal = interimTranscript;
-    if (entries.length > 0) {
-      const prev = entries[entries.length - 1];
-      previousTranslation = prev.translatedText;
-      previousOriginal = prev.text;
-    }
-  } else if (entries.length > 0) {
-    const last = entries[entries.length - 1];
-    activeTranslation = last.translatedText;
-    activeOriginal = last.text;
-    if (entries.length > 1) {
-      const prev = entries[entries.length - 2];
-      previousTranslation = prev.translatedText;
-      previousOriginal = prev.text;
-    }
+    previousTranslation = lastEntry ? (lastEntry.translatedText || lastEntry.text) : '';
+    previousOriginal = lastEntry ? lastEntry.text : '';
+  } else if (lastEntry) {
+    // Between sentences / during pauses: PERSIST the last translated sentence!
+    // It remains on screen smoothly until new words are spoken!
+    activeTranslation = lastEntry.translatedText || lastEntry.text;
+    activeOriginal = lastEntry.text;
+    previousTranslation = prevEntry ? (prevEntry.translatedText || prevEntry.text) : '';
+    previousOriginal = prevEntry ? prevEntry.text : '';
   }
 
   // Audio wave visualizer bars
@@ -361,13 +362,13 @@ export const LiveTranslationOverlay = ({
             )}
 
             <div className="w-full max-w-6xl mx-auto space-y-4">
-              {activeTranslation ? (
+              {activeTranslation || hasHistory || isSpeakingNow ? (
                 <div>
                   <div
                     dir={isTargetRTL ? 'rtl' : 'ltr'}
-                    className={`${getDynamicNewFontSize(activeTranslation, subtitleSize)} font-black text-white tracking-tight leading-tight drop-shadow-2xl transition-all duration-150`}
+                    className={`${getDynamicNewFontSize(activeTranslation || '...', subtitleSize)} font-black text-white tracking-tight leading-tight drop-shadow-2xl transition-all duration-150`}
                   >
-                    {activeTranslation}
+                    {activeTranslation || '...'}
                   </div>
 
                   {/* Optional Original Spoken Text (Hidden by default, shown only if toggled ON) */}
@@ -384,7 +385,7 @@ export const LiveTranslationOverlay = ({
                   )}
                 </div>
               ) : (
-                /* Idle / Listening prompt */
+                /* Idle prompt shown ONLY before any speech has ever occurred */
                 <div className="space-y-4 py-8">
                   <div className="w-20 h-20 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 mx-auto flex items-center justify-center text-4xl animate-pulse">
                     🎙️

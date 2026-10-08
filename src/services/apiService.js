@@ -160,7 +160,7 @@ class ApiService {
       });
 
       if (!res.ok) {
-        let errMsg = 'Yoruba voice translation server error.';
+        let errMsg = 'Voice translation server error.';
         try {
           const errData = await res.json();
           errMsg = errData.message || errMsg;
@@ -183,7 +183,7 @@ class ApiService {
           transcript: '',
           translatedText: '',
           fallback: true,
-          message: data.message || 'Yoruba voice translation is currently busy.'
+          message: data.message || 'Voice translation server is currently busy.'
         };
       }
 
@@ -191,7 +191,7 @@ class ApiService {
         transcript: data.transcript || '',
         translatedText: data.translatedText || '',
         modelUsed: data.modelUsed,
-        notYoruba: !!data.notYoruba,
+        notYoruba: !!data.notYoruba && sourceLang === 'yo',
         fallback: false
       };
     } catch (err) {

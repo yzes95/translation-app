@@ -149,26 +149,38 @@ export const TranscriptFeed = ({
 
       {/* Live Interim Streaming Bubble (while actively speaking) */}
       {interimTranscript && (
-        <div className="bg-slate-900/80 border border-blue-500/40 rounded-2xl p-4 animate-pulse">
-          <div className="flex items-center space-x-2 mb-2 text-xs text-blue-400 font-semibold">
-            <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
-            <span>Live Speaking in progress...</span>
+        <div className="bg-slate-900/90 border border-blue-500/50 rounded-2xl p-4 shadow-lg shadow-blue-500/5 transition-all">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center space-x-2 text-xs text-blue-400 font-semibold">
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
+              <span>Live Speaking...</span>
+            </div>
+            <span className="text-[10px] text-slate-500 font-mono">Real-time</span>
           </div>
 
-          <p className={`text-xs text-slate-300 mb-2 ${isSourceRTL ? 'rtl-text' : 'ltr-text'}`}>
+          {/* Spoken original words */}
+          <p className={`text-xs text-slate-400 mb-2.5 ${isSourceRTL ? 'rtl-text' : 'ltr-text'}`}>
             {interimTranscript}
           </p>
 
-          {interimTranslation && (
-            <div
-              className={`text-sm font-medium text-indigo-300 pt-2 border-t border-blue-500/20 ${
-                isTargetRTL ? 'rtl-text' : 'ltr-text'
-              }`}
-            >
-              <span className="text-[10px] text-indigo-400/70 block uppercase font-bold mb-0.5">Preview:</span>
-              {interimTranslation}
+          {/* Live real-time translation */}
+          <div
+            className={`p-2.5 rounded-xl bg-indigo-950/30 border border-indigo-500/30 ${
+              isTargetRTL ? 'rtl-text' : 'ltr-text'
+            }`}
+          >
+            <span className="text-[10px] text-indigo-400 block uppercase font-bold tracking-wider mb-0.5">
+              Live Translation ({targetLangInfo.name}):
+            </span>
+            <div className={`text-sm sm:text-base font-semibold text-indigo-100 ${isTargetRTL ? 'rtl-text' : 'ltr-text'}`}>
+              {interimTranslation || (
+                <span className="text-xs text-indigo-400/60 italic flex items-center space-x-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
+                  <span>Translating in real time...</span>
+                </span>
+              )}
             </div>
-          )}
+          </div>
         </div>
       )}
 
