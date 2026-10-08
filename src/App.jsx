@@ -50,6 +50,7 @@ export function App() {
   const [entries, setEntries] = useState([]);
   const [interimTranscript, setInterimTranscript] = useState('');
   const [interimTranslation, setInterimTranslation] = useState('');
+  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
 
   // Modals & Drawers
   const [activeSummary, setActiveSummary] = useState(null);
@@ -352,14 +353,7 @@ export function App() {
       const speakerNum = (entriesRef.current.length % 2) + 1;
       const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-      const initialEntry = {
-        id: entryId,
-        speaker: `Speaker ${speakerNum}`,
-        timestamp: timeNow,
-        text: '🎙️ Processing speech clip...',
-        translatedText: ''
-      };
-      setEntries((prev) => [...prev, initialEntry]);
+      setIsProcessingAudio(true);
 
       try {
         const result = await apiService.translateAudio({
@@ -373,34 +367,34 @@ export function App() {
         if (sessionIdRef.current !== session) return;
 
         if (result.notYoruba && currentSrc === 'yo') {
-          setEntries((prev) => prev.filter((item) => item.id !== entryId));
           setFallbackNotice("Didn't hear Yoruba speech. Please speak clearly in Yoruba.");
           setTimeout(() => setFallbackNotice(null), 4000);
           return;
         }
 
         if (result.transcript && result.translatedText) {
-          setEntries((prev) =>
-            prev.map((item) =>
-              item.id === entryId
-                ? { ...item, text: result.transcript, translatedText: result.translatedText }
-                : item
-            )
-          );
+          const finalEntry = {
+            id: entryId,
+            speaker: `Speaker ${speakerNum}`,
+            timestamp: timeNow,
+            text: result.transcript,
+            translatedText: result.translatedText
+          };
+          setEntries((prev) => [...prev, finalEntry]);
 
           if (settingsRef.current.autoTTS && result.translatedText) {
             ttsService.speak(result.translatedText, currentTgt, { rate: settingsRef.current.ttsRate });
           }
         } else if (result.fallback && result.message) {
-          setEntries((prev) => prev.filter((item) => item.id !== entryId));
           setFallbackNotice(result.message);
           setTimeout(() => setFallbackNotice(null), 5000);
-        } else {
-          setEntries((prev) => prev.filter((item) => item.id !== entryId));
         }
       } catch (err) {
         console.error('Audio translation error:', err);
-        setEntries((prev) => prev.filter((item) => item.id !== entryId));
+      } finally {
+        if (sessionIdRef.current === session) {
+          setIsProcessingAudio(false);
+        }
       }
     });
   };
@@ -419,6 +413,7 @@ export function App() {
     sessionIdRef.current += 1;
     const currentSession = sessionIdRef.current;
     isListeningRef.current = true;
+    setIsListening(true);
     setEntries([]);
     setInterimTranscript('');
     setInterimTranslation('');
@@ -438,14 +433,22 @@ export function App() {
       startAIVoiceListening(currentSession);
     } else {
       // Actively confirm hardware mic permission on mobile and browser
-      await speechService.requestMicPermission();
+      const granted = await speechService.requestMicPermission();
       if (!isListeningRef.current || sessionIdRef.current !== currentSession) return;
+      if (!granted) {
+        setVoiceEngine('ai_voice');
+        voiceEngineRef.current = 'ai_voice';
+        startAIVoiceListening(currentSession);
+        return;
+      }
       speechService.start(sourceLang);
     }
   };
 
   const handleStopListening = () => {
     isListeningRef.current = false;
+    setIsListening(false);
+    setIsProcessingAudio(false);
     speechService.stop();
     audioSegmentService.stop();
     if (interimDebounceRef.current) {
@@ -788,6 +791,7 @@ export function App() {
         onSpeakText={handleSpeakText}
         autoTTS={settings.autoTTS}
         onToggleAutoTTS={() => setSettings((s) => ({ ...s, autoTTS: !s.autoTTS }))}
+        isProcessingAudio={isProcessingAudio}
       />
 
       {/* PWA / APK Installation Modal */}

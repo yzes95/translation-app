@@ -34,6 +34,9 @@ class SpeechService {
   }
 
   isSupported() {
+    const isFirefox =
+      typeof navigator !== 'undefined' && /Firefox/i.test(navigator.userAgent || '');
+    if (isFirefox) return false;
     return Boolean(this.SpeechRecognition);
   }
 
@@ -133,6 +136,7 @@ class SpeechService {
     this.isListening = true;
     this.accumulatedSentence = '';
     this.lastInterim = '';
+    this.networkErrorCount = 0;
 
     if (this.restartTimeout) {
       clearTimeout(this.restartTimeout);
@@ -173,6 +177,8 @@ class SpeechService {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         // Immediately release mic stream tracks so recognition has exclusive access
         stream.getTracks().forEach((track) => track.stop());
+        // Small delay to allow mobile OS HAL to cleanly release the microphone lock
+        await new Promise((resolve) => setTimeout(resolve, 80));
         return true;
       } catch (err) {
         console.warn('Microphone permission request failed:', err);
@@ -226,6 +232,7 @@ class SpeechService {
 
       newlyFinalized = newlyFinalized.trim();
       this.lastInterim = interimTranscript.trim();
+      this.networkErrorCount = 0;
 
       // 1. Instant Commit: When the speech model finalizes a phrase, commit immediately!
       if (newlyFinalized) {
@@ -285,6 +292,19 @@ class SpeechService {
         return;
       }
       if (event.error === 'network') {
+        this.networkErrorCount = (this.networkErrorCount || 0) + 1;
+        if (this.networkErrorCount > 2) {
+          this.userActive = false;
+          this.isListening = false;
+          if (this.onStatusChange) this.onStatusChange('idle');
+          if (this.onError) {
+            this.onError({
+              code: 'network',
+              message: 'Browser speech recognition network error. Auto-switching to AI Voice engine.'
+            });
+          }
+          return;
+        }
         setTimeout(() => {
           if (this.userActive) this.safeStart();
         }, 400);

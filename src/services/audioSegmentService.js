@@ -26,6 +26,7 @@ class AudioSegmentService {
     if (typeof MediaRecorder === 'undefined') return 'audio/webm';
     if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus';
     if (MediaRecorder.isTypeSupported('audio/webm')) return 'audio/webm';
+    if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) return 'audio/ogg;codecs=opus';
     if (MediaRecorder.isTypeSupported('audio/mp4')) return 'audio/mp4';
     return '';
   }
@@ -72,7 +73,9 @@ class AudioSegmentService {
       source.connect(this.analyser);
 
       const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-      const SILENCE_THRESHOLD = 8; // Out of 100 volume scale
+      const SILENCE_THRESHOLD = 14; // Out of 100 volume scale (speech is typically 22-80, ambient hiss is 8-12)
+      const PEAK_SPEECH_THRESHOLD = 18; // Vocal consonant/syllable dynamic energy
+      const MIN_SPEECH_FRAMES = 4; // ~280ms of sound above threshold
       const PAUSE_DURATION_MS = 900; // 0.9s responsive pause (keeps up with videos)
 
       this.volumeCheckInterval = setInterval(() => {
@@ -90,9 +93,15 @@ class AudioSegmentService {
           this.onVolumeChange(normalizedVolume);
         }
 
-        // Voice activity detection
+        // Voice activity detection with vocal energy verification
         if (normalizedVolume > SILENCE_THRESHOLD) {
-          this.speechDetected = true;
+          this.speechFrameCount = (this.speechFrameCount || 0) + 1;
+          this.peakVolume = Math.max(this.peakVolume || 0, normalizedVolume);
+
+          if (this.speechFrameCount >= MIN_SPEECH_FRAMES && this.peakVolume >= PEAK_SPEECH_THRESHOLD) {
+            this.speechDetected = true;
+          }
+
           if (this.silenceTimer) {
             clearTimeout(this.silenceTimer);
             this.silenceTimer = null;
@@ -100,7 +109,7 @@ class AudioSegmentService {
 
           // Responsive auto-flush: If continuous speech exceeds 3.5 seconds, flush segment so video sentences stream continuously
           const elapsed = Date.now() - this.segmentStartTime;
-          if (elapsed >= 3500 && this.isListening) {
+          if (elapsed >= 3500 && this.isListening && this.speechDetected) {
             this.flush();
           }
         } else if (this.speechDetected && !this.silenceTimer) {
@@ -123,6 +132,8 @@ class AudioSegmentService {
 
     this.chunks = [];
     this.speechDetected = false;
+    this.speechFrameCount = 0;
+    this.peakVolume = 0;
     this.segmentStartTime = Date.now();
 
     try {
@@ -142,8 +153,13 @@ class AudioSegmentService {
 
       this.mediaRecorder.onstop = () => {
         const durationMs = Date.now() - this.segmentStartTime;
-        // Ignore clips shorter than 600ms or with no detected speech to save server quota
-        if (this.chunks.length > 0 && durationMs >= 600 && this.speechDetected) {
+        const hasRealSpeech =
+          this.speechDetected &&
+          (this.speechFrameCount || 0) >= 4 &&
+          (this.peakVolume || 0) >= 18;
+
+        // Ignore clips shorter than 600ms or with no detected speech to save server quota & avoid hallucinations
+        if (this.chunks.length > 0 && durationMs >= 600 && hasRealSpeech) {
           const blob = new Blob(this.chunks, { type: this.mimeType || 'audio/webm' });
           if (this.onSegment) {
             this.onSegment({
@@ -155,6 +171,8 @@ class AudioSegmentService {
         }
         this.chunks = [];
         this.speechDetected = false;
+        this.speechFrameCount = 0;
+        this.peakVolume = 0;
 
         // Automatically start recording the next sentence if still active
         if (this.isListening) {
@@ -173,6 +191,10 @@ class AudioSegmentService {
     if (this.silenceTimer) {
       clearTimeout(this.silenceTimer);
       this.silenceTimer = null;
+    }
+
+    if (!this.speechDetected) {
+      return;
     }
 
     if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {

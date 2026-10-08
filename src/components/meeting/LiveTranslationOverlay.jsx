@@ -34,7 +34,8 @@ export const LiveTranslationOverlay = ({
   activeMode, // 'basic' | 'smart' | 'unlimited'
   onSpeakText,
   autoTTS,
-  onToggleAutoTTS
+  onToggleAutoTTS,
+  isProcessingAudio = false
 }) => {
   // Option: show original spoken language (default: FALSE - only shows translation)
   const [showOriginal, setShowOriginal] = useState(false);
@@ -45,6 +46,23 @@ export const LiveTranslationOverlay = ({
   const [copiedId, setCopiedId] = useState(null);
 
   const scrollRef = useRef(null);
+  const lastValidTranslationRef = useRef('');
+  const lastValidOriginalRef = useRef('');
+  const [hasStartedSpeech, setHasStartedSpeech] = useState(false);
+
+  useEffect(() => {
+    if ((entries && entries.length > 0) || interimTranscript || interimTranslation) {
+      setHasStartedSpeech(true);
+    }
+  }, [entries, interimTranscript, interimTranslation]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setHasStartedSpeech(false);
+      lastValidTranslationRef.current = '';
+      lastValidOriginalRef.current = '';
+    }
+  }, [isOpen]);
 
   const sourceLangInfo = getLanguageByCode(sourceLang);
   const targetLangInfo = getLanguageByCode(targetLang);
@@ -75,11 +93,21 @@ export const LiveTranslationOverlay = ({
   };
 
   // Determine persistent active translation vs previous sentence for Subtitle Mode
-  const hasHistory = entries.length > 0;
+  const hasHistory = entries && entries.length > 0;
   const isSpeakingNow = Boolean(interimTranscript);
 
+  // Keep track of the latest confirmed translation for smooth subtitles
+  const lastTranslatedEntry = hasHistory ? [...entries].reverse().find((e) => Boolean(e.translatedText)) : null;
+  if (lastTranslatedEntry?.translatedText) {
+    lastValidTranslationRef.current = lastTranslatedEntry.translatedText;
+    lastValidOriginalRef.current = lastTranslatedEntry.text || '';
+  }
+  if (interimTranslation) {
+    lastValidTranslationRef.current = interimTranslation;
+  }
+
   const lastEntry = hasHistory ? entries[entries.length - 1] : null;
-  const prevEntry = entries.length > 1 ? entries[entries.length - 2] : null;
+  const prevEntry = entries && entries.length > 1 ? entries[entries.length - 2] : null;
 
   let activeTranslation = '';
   let activeOriginal = '';
@@ -88,18 +116,21 @@ export const LiveTranslationOverlay = ({
 
   if (isSpeakingNow) {
     // When actively speaking: prioritize live interim translation!
-    // If interim translation is still computing, fallback to previous finished translation or interim text preview
-    activeTranslation = interimTranslation || (lastEntry?.translatedText ? lastEntry.translatedText : interimTranscript);
+    // Never fall back to interimTranscript (source language) in activeTranslation!
+    activeTranslation = interimTranslation || lastValidTranslationRef.current || '';
     activeOriginal = interimTranscript;
-    previousTranslation = lastEntry ? (lastEntry.translatedText || lastEntry.text) : '';
-    previousOriginal = lastEntry ? lastEntry.text : '';
+    previousTranslation = prevEntry?.translatedText || (interimTranslation ? (lastEntry?.translatedText || '') : '');
+    previousOriginal = prevEntry?.text || (interimTranslation ? (lastEntry?.text || '') : '');
   } else if (lastEntry) {
-    // Between sentences / during pauses: PERSIST the last translated sentence!
-    // It remains on screen smoothly until new words are spoken!
-    activeTranslation = lastEntry.translatedText || lastEntry.text;
-    activeOriginal = lastEntry.text;
-    previousTranslation = prevEntry ? (prevEntry.translatedText || prevEntry.text) : '';
-    previousOriginal = prevEntry ? prevEntry.text : '';
+    // Between sentences / during pauses: persist the last translated sentence!
+    // Strictly assign translatedText to translation fields (NEVER raw source text)
+    activeTranslation = lastEntry.translatedText || lastValidTranslationRef.current || '';
+    activeOriginal = lastEntry.text || '';
+    previousTranslation = prevEntry?.translatedText || '';
+    previousOriginal = prevEntry?.text || '';
+  } else if (lastValidTranslationRef.current) {
+    activeTranslation = lastValidTranslationRef.current;
+    activeOriginal = lastValidOriginalRef.current;
   }
 
   // Audio wave visualizer bars
@@ -249,15 +280,19 @@ export const LiveTranslationOverlay = ({
           {/* Toggle Show Original Spoken Language (Default: OFF) */}
           <button
             onClick={() => setShowOriginal(!showOriginal)}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+            className={`flex items-center space-x-1.5 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl border text-[11px] sm:text-xs font-bold transition-all cursor-pointer shrink-0 ${
               showOriginal
-                ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-300'
-                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-indigo-600/30 border-indigo-500/60 text-indigo-200 shadow-sm shadow-indigo-500/20'
+                : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:text-white'
             }`}
             title="Toggle showing original spoken language"
           >
-            {showOriginal ? <Eye className="w-3.5 h-3.5 text-indigo-400" /> : <EyeOff className="w-3.5 h-3.5" />}
-            <span className="hidden md:inline">{showOriginal ? 'Original: ON' : 'Original: OFF'}</span>
+            {showOriginal ? (
+              <Eye className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+            ) : (
+              <EyeOff className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            )}
+            <span>{showOriginal ? 'Original: ON' : 'Original: OFF'}</span>
           </button>
 
           {/* Subtitle Size Selector */}
@@ -353,16 +388,22 @@ export const LiveTranslationOverlay = ({
               <span>Current</span>
             </span>
 
-            {/* Speaking Now Badge */}
+            {/* Speaking Now / Processing Badge */}
             {isSpeakingNow && (
               <div className="absolute top-3 right-4 sm:right-8 flex items-center space-x-2 px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-semibold animate-pulse">
                 <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
                 <span>Speaking now...</span>
               </div>
             )}
+            {isProcessingAudio && !isSpeakingNow && (
+              <div className="absolute top-3 right-4 sm:right-8 flex items-center space-x-2 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-semibold animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping"></span>
+                <span>Translating clip...</span>
+              </div>
+            )}
 
             <div className="w-full max-w-6xl mx-auto space-y-4">
-              {activeTranslation || hasHistory || isSpeakingNow ? (
+              {hasStartedSpeech || activeTranslation || hasHistory || isSpeakingNow ? (
                 <div>
                   <div
                     dir={isTargetRTL ? 'rtl' : 'ltr'}
@@ -387,13 +428,13 @@ export const LiveTranslationOverlay = ({
               ) : (
                 /* Idle prompt shown ONLY before any speech has ever occurred */
                 <div className="space-y-4 py-8">
-                  <div className="w-20 h-20 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 mx-auto flex items-center justify-center text-4xl animate-pulse">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-blue-600/10 border border-blue-500/20 text-blue-400 mx-auto flex items-center justify-center text-3xl sm:text-4xl animate-pulse">
                     🎙️
                   </div>
-                  <h2 className="text-2xl sm:text-4xl font-bold text-slate-200">
+                  <h2 className="text-xl sm:text-3xl font-bold text-slate-200">
                     Listening in {sourceLangInfo.name}...
                   </h2>
-                  <p className="text-base sm:text-lg text-slate-500 max-w-lg mx-auto">
+                  <p className="text-sm sm:text-base text-slate-500 max-w-lg mx-auto">
                     Live translation in {targetLangInfo.name} will appear here in cinema scale.
                   </p>
                 </div>

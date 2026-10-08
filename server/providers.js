@@ -58,10 +58,28 @@ Speech to translate:
 // Shared audio interpreter prompt builder (supports Yoruba and all other languages for universal audio fallback)
 export function buildAudioInterpreterPrompt(srcName, tgtName) {
   if (srcName && srcName.toLowerCase() === 'yoruba') {
-    return `The audio is spoken Yoruba. Transcribe it in Yoruba with correct tone marks, then translate it into ${tgtName}. If the audio is not Yoruba or is silent, return an empty transcript. Reply ONLY as valid JSON in this format:
+    return `You are a professional audio interpreter.
+Input: Audio clip that may contain spoken human speech in Yoruba.
+Task: Transcribe the Yoruba speech accurately with correct tone marks, then translate it into ${tgtName}.
+
+CRITICAL ANTI-HALLUCINATION RULES:
+1. If the audio is silent, background static, room hiss, fan noise, breathing, coughing, or has no clear spoken Yoruba words, return empty strings: {"transcript":"","translation":""}.
+2. NEVER hallucinate phrases when no real speech was uttered.
+3. Transcribe and translate ONLY what was clearly spoken by a human.
+
+Reply ONLY with a raw JSON object in this exact schema:
 {"transcript":"...","translation":"..."}`;
   }
-  return `The audio contains spoken speech in ${srcName || 'the speaker language'}. Transcribe what was said accurately in ${srcName || 'original language'}, then translate it into ${tgtName}. If the audio is silent or unintelligible, return an empty transcript. Reply ONLY as valid JSON in this format:
+  return `You are a professional audio interpreter.
+Input: Audio clip that may contain spoken human speech in ${srcName || 'the speaker language'}.
+Task: Transcribe the speech accurately into ${srcName || 'the speaker language'}, then translate it into ${tgtName}.
+
+CRITICAL ANTI-HALLUCINATION RULES:
+1. If the audio is silent, background static, room hiss, fan noise, breathing, coughing, or has no clear spoken human words, return empty strings: {"transcript":"","translation":""}.
+2. NEVER hallucinate phrases like "Thank you", "Where are you going?", "Please subscribe", or generic sentences when no real speech was uttered.
+3. Transcribe and translate ONLY what was clearly spoken by a human.
+
+Reply ONLY with a raw JSON object in this exact schema:
 {"transcript":"...","translation":"..."}`;
 }
 
@@ -200,6 +218,25 @@ const geminiProvider = {
     const transcript = (parsed.transcript || '').trim();
     const translation = (parsed.translation || '').trim();
 
+    // Reject common phantom hallucinations on silence/ambient hiss
+    const lowerTranscript = transcript.toLowerCase().replace(/[.,!?]/g, '').trim();
+    const isHallucination =
+      lowerTranscript === 'thank you' ||
+      lowerTranscript === 'thanks for watching' ||
+      lowerTranscript === 'subtitles by' ||
+      lowerTranscript === 'where are you going' ||
+      lowerTranscript === 'please subscribe' ||
+      lowerTranscript === 'you';
+
+    if (isHallucination && transcript.length < 25) {
+      return {
+        transcript: '',
+        translatedText: '',
+        modelUsed: `gemini:${model}`,
+        notYoruba: false
+      };
+    }
+
     return {
       transcript,
       translatedText: translation,
@@ -296,7 +333,17 @@ const groqProvider = {
     const transcribeData = await transcribeRes.json();
     const transcript = (transcribeData?.text || '').trim();
 
-    if (!transcript || transcript.length < 2) {
+    // Reject common phantom hallucinations on silence/ambient hiss
+    const lowerTranscript = transcript.toLowerCase().replace(/[.,!?]/g, '').trim();
+    const isHallucination =
+      lowerTranscript === 'thank you' ||
+      lowerTranscript === 'thanks for watching' ||
+      lowerTranscript === 'subtitles by' ||
+      lowerTranscript === 'where are you going' ||
+      lowerTranscript === 'please subscribe' ||
+      lowerTranscript === 'you';
+
+    if (!transcript || transcript.length < 2 || isHallucination) {
       return {
         transcript: '',
         translatedText: '',
