@@ -174,6 +174,13 @@ export function App() {
       setTimeout(() => setFallbackNotice(null), 5000);
     };
 
+    translationEngine.onModeFallback = ({ fromMode, toMode, reason }) => {
+      setActiveMode(toMode);
+      activeModeRef.current = toMode;
+      setFallbackNotice(reason || `Switched from ${fromMode} to ${toMode} mode.`);
+      setTimeout(() => setFallbackNotice(null), 6000);
+    };
+
     speechService.onStatusChange = (status) => {
       const listening = status === 'listening';
       setIsListening(listening);
@@ -186,7 +193,12 @@ export function App() {
 
     speechService.onError = (err) => {
       console.warn('Speech recognition reported:', err);
-      if (isListeningRef.current && startAIVoiceListeningRef.current) {
+      const isPermanentFail =
+        err?.code === 'not-supported' ||
+        err?.code === 'service-not-allowed' ||
+        !speechService.isSupported();
+
+      if (isPermanentFail && isListeningRef.current && startAIVoiceListeningRef.current) {
         setVoiceEngine('ai_voice');
         voiceEngineRef.current = 'ai_voice';
         setFallbackNotice('Browser speech recognition unavailable. Auto-switched to Universal AI Voice Engine.');
@@ -194,12 +206,10 @@ export function App() {
         startAIVoiceListeningRef.current();
       } else {
         const msg = typeof err === 'string' ? err : err?.message;
-        if (msg) {
+        if (msg && err?.code !== 'no-speech' && err?.code !== 'aborted') {
           setFallbackNotice(msg);
           setTimeout(() => setFallbackNotice(null), 5000);
         }
-        setIsListening(false);
-        isListeningRef.current = false;
       }
     };
 
@@ -420,18 +430,15 @@ export function App() {
     setMeetingDuration(0);
 
     const isBrowserSTTSupported = speechService.isSupported();
-    const shouldUseAIVoice =
-      sourceLang === 'yo' ||
-      voiceEngineRef.current === 'ai_voice' ||
-      !isBrowserSTTSupported;
+    const shouldUseAIVoice = sourceLang === 'yo' || !isBrowserSTTSupported;
 
     if (shouldUseAIVoice) {
-      if (voiceEngineRef.current !== 'ai_voice') {
-        setVoiceEngine('ai_voice');
-        voiceEngineRef.current = 'ai_voice';
-      }
+      setVoiceEngine('ai_voice');
+      voiceEngineRef.current = 'ai_voice';
       startAIVoiceListening(currentSession);
     } else {
+      setVoiceEngine('browser');
+      voiceEngineRef.current = 'browser';
       // Actively confirm hardware mic permission on mobile and browser
       const granted = await speechService.requestMicPermission();
       if (!isListeningRef.current || sessionIdRef.current !== currentSession) return;
@@ -631,6 +638,7 @@ export function App() {
         onOpenLectureNotes={() => setIsLectureModalOpen(true)}
         isListening={isListening}
         meetingDuration={meetingDuration}
+        activeMode={activeMode}
       />
 
       {/* Main Container */}
@@ -831,12 +839,13 @@ export function App() {
 
       {/* Smart Mode Fallback Notification Toast */}
       {fallbackNotice && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs sm:text-sm font-semibold shadow-xl backdrop-blur-md flex items-center space-x-2 animate-fadeIn max-w-[90vw]">
-          <span>⚡</span>
-          <span>{fallbackNotice}</span>
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] px-4 py-3 rounded-2xl bg-slate-900/95 border border-amber-500/60 text-amber-200 text-xs sm:text-sm font-semibold shadow-2xl backdrop-blur-xl flex items-center space-x-2.5 animate-fadeIn max-w-[92vw] ring-1 ring-amber-500/30">
+          <span className="text-base shrink-0">⚠️</span>
+          <span className="flex-1 leading-snug">{fallbackNotice}</span>
           <button
             onClick={() => setFallbackNotice(null)}
-            className="text-amber-400 hover:text-white ml-2 text-xs font-bold cursor-pointer"
+            className="p-1 rounded-lg text-amber-400 hover:text-white hover:bg-slate-800 ml-2 text-xs font-bold cursor-pointer shrink-0"
+            title="Dismiss notification"
           >
             ✕
           </button>

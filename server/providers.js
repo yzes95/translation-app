@@ -112,14 +112,14 @@ const geminiProvider = {
     if (!geminiKey) throw new Error('Gemini key not configured');
 
     const prompt = buildInterpreterPrompt(text, srcName, tgtName, dialectContext);
-    const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash'];
+    const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
     let lastError = null;
 
     for (const model of candidateModels) {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 6500);
+        const timeout = setTimeout(() => controller.abort(), 5000);
 
         const res = await fetch(url, {
           method: 'POST',
@@ -127,8 +127,8 @@ const geminiProvider = {
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
-              temperature: 0.2,
-              maxOutputTokens: 256
+              temperature: 0.1,
+              maxOutputTokens: 128
             }
           }),
           signal: controller.signal
@@ -258,11 +258,11 @@ const groqProvider = {
     if (!groqKey) throw new Error('Groq key not configured');
 
     const prompt = buildInterpreterPrompt(text, srcName, tgtName, dialectContext);
-    const model = 'llama-3.3-70b-versatile';
+    const model = 'llama-3.1-8b-instant';
     const url = 'https://api.groq.com/openai/v1/chat/completions';
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 5000);
 
     const res = await fetch(url, {
       method: 'POST',
@@ -273,7 +273,7 @@ const groqProvider = {
       body: JSON.stringify({
         model,
         temperature: 0.1,
-        max_tokens: 256,
+        max_tokens: 128,
         messages: [
           { role: 'system', content: prompt },
           { role: 'user', content: text }
@@ -494,12 +494,12 @@ const cloudflareProvider = {
 // -------------------------------------------------------------
 // Provider Chain & Execution Orchestrator
 // -------------------------------------------------------------
-export const CHAIN = [geminiProvider, groqProvider, cloudflareProvider];
+export const CHAIN = [groqProvider, geminiProvider, cloudflareProvider];
 
 export function getProviderStatus() {
   return {
-    gemini: geminiProvider.isConfigured(),
     groq: groqProvider.isConfigured(),
+    gemini: geminiProvider.isConfigured(),
     cloudflare: cloudflareProvider.isConfigured()
   };
 }
@@ -550,10 +550,12 @@ export async function runChain(method, args) {
         msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('504');
 
       if (isQuotaOrRate) {
-        const cooldownMs = msg.includes('quota') || msg.includes('exhausted') ? 10 * 60 * 1000 : 60 * 1000;
+        // Groq and Gemini rate limits are per-minute rolling windows.
+        // A 12-second pause clears the token bucket without freezing the session.
+        const cooldownMs = msg.includes('quota') || msg.includes('exhausted') ? 60 * 1000 : 12 * 1000;
         cooldowns.set(provider.name, Date.now() + cooldownMs);
       } else if (isServerDown) {
-        cooldowns.set(provider.name, Date.now() + 30 * 1000);
+        cooldowns.set(provider.name, Date.now() + 15 * 1000);
       }
     }
   }

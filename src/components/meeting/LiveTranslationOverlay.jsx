@@ -226,22 +226,24 @@ export const LiveTranslationOverlay = ({
             </button>
           </div>
 
-          {/* Active Mode / Model Indicator */}
-          <div className="hidden sm:flex items-center space-x-1.5 px-3 py-1 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold">
+          {/* Active Mode / Model Indicator (Visible across all screens including mobile) */}
+          <div className="flex items-center space-x-1 px-2 py-1 sm:px-3 sm:py-1 rounded-xl bg-slate-900 border border-slate-800 text-[10px] sm:text-xs font-bold shrink-0">
             {activeMode === 'smart' ? (
-              <span className="text-amber-400 flex items-center space-x-1" title="Shared AI quota — automatically switches back to Basic mode when quota depletes">
+              <span className="text-amber-400 flex items-center space-x-1" title="Smart AI (Groq 8B + Gemini Lite)">
                 <span>⭐</span>
-                <span>Smart AI (Shared Quota)</span>
+                <span className="hidden sm:inline">Smart AI</span>
+                <span className="sm:hidden">Smart</span>
               </span>
             ) : activeMode === 'unlimited' ? (
-              <span className="text-violet-400 flex items-center space-x-1" title="Personal key — top accuracy with zero daily limits">
+              <span className="text-violet-400 flex items-center space-x-1" title="Unlimited AI (Personal Key)">
                 <span>♾️</span>
-                <span>Unlimited AI (Top Accuracy)</span>
+                <span className="hidden sm:inline">Unlimited AI</span>
+                <span className="sm:hidden">Unlim</span>
               </span>
             ) : (
-              <span className="text-amber-300 flex items-center space-x-1" title="Basic mode uses literal translation with lowest accuracy">
+              <span className="text-emerald-400 flex items-center space-x-1" title="Basic Mode (Fast Google Neural Edge)">
                 <span>🟢</span>
-                <span>Basic (Lowest Accuracy)</span>
+                <span>Basic</span>
               </span>
             )}
           </div>

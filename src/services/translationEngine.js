@@ -1,6 +1,5 @@
-// Translation Engine with Advanced Dialect Normalizer, Free In-Browser Online Engine,
-// Optional AI (Gemini / Groq / OpenAI), and Offline Lexicon Fallback.
 import { apiService } from './apiService';
+import { normalizeSpeech } from './dialectNormalizers';
 
 const cache = new Map();
 
@@ -134,7 +133,9 @@ export function normalizeNigerianPidgin(text) {
 export class TranslationEngine {
   constructor() {
     this.activeBackend = 'online-fast';
-    this.lastModelUsed = 'gemini-3.5-flash-lite';
+    this.lastModelUsed = 'groq:llama-3.1-8b-instant';
+    this.onModeFallback = null;
+    this.onFallbackNotice = null;
   }
 
   getAIConfig() {
@@ -242,11 +243,18 @@ export class TranslationEngine {
           }
         } catch (err) {
           console.warn('Unlimited AI translation error, falling back to basic:', err);
+          if (this.onModeFallback) {
+            this.onModeFallback({
+              fromMode: 'unlimited',
+              toMode: 'basic',
+              reason: 'Personal AI key error. Switched to Basic Mode so your speech continues.'
+            });
+          }
         }
       }
     }
 
-    // 3. Smart Mode: Render Backend with 30 min daily quota
+    // 3. Smart Mode: Render Backend (Groq 8B instant LPU -> Gemini Flash-Lite)
     if (mode === 'smart') {
       try {
         const smartRes = await apiService.translateSmart(cleanText, sourceLang, targetLang);
@@ -257,22 +265,31 @@ export class TranslationEngine {
           cache.set(cacheKey, smartRes.translatedText);
           return smartRes.translatedText;
         } else if (smartRes?.fallback) {
-          if (this.onFallbackNotice && smartRes.message) {
-            this.onFallbackNotice(smartRes.message);
+          if (this.onModeFallback) {
+            this.onModeFallback({
+              fromMode: 'smart',
+              toMode: 'basic',
+              reason: smartRes.message || 'Smart AI quota temporarily busy. Switched to Basic Mode so your speech continues.'
+            });
           }
         }
       } catch (err) {
         console.warn('Smart mode call failed, falling back to basic:', err);
+        if (this.onModeFallback) {
+          this.onModeFallback({
+            fromMode: 'smart',
+            toMode: 'basic',
+            reason: 'Smart AI temporarily unreachable. Switched to Basic Mode so your speech continues.'
+          });
+        }
       }
     }
 
-    // 4. Dialect Pre-Processing for Arabic & Nigerian Pidgin
-    let queryText = cleanText;
+    // 4. Universal Speech & Dialect Pre-Processing (across all 11 languages)
+    const normalizedText = normalizeSpeech(cleanText, sourceLang);
+    let queryText = normalizedText;
     let actualSource = sourceLang;
-    if (sourceLang === 'ar') {
-      queryText = normalizeArabicDialect(cleanText);
-    } else if (sourceLang === 'pcm') {
-      queryText = normalizeNigerianPidgin(cleanText);
+    if (sourceLang === 'pcm') {
       if (targetLang === 'en') {
         // Pidgin normalized into clear standard English
         cache.set(cacheKey, queryText);

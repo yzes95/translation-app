@@ -19,7 +19,8 @@ export const Header = ({
   onOpenAIGuide,
   onOpenLectureNotes,
   isListening,
-  meetingDuration
+  meetingDuration,
+  activeMode = 'smart'
 }) => {
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
@@ -60,19 +61,44 @@ export const Header = ({
           </div>
         </div>
 
-        {/* Live indicator if listening */}
-        {isListening && (
-          <div className="flex items-center space-x-1.5 sm:space-x-2 px-2.5 py-1 sm:px-3.5 sm:py-1.5 rounded-full bg-red-500/15 border border-red-500/30 shrink-0">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-            </span>
-            <span className="text-xs font-bold text-red-400">REC</span>
-            <span className="text-xs font-mono font-bold text-slate-200 border-l border-red-500/30 pl-1.5 sm:pl-2">
-              {formatTimer(meetingDuration)}
-            </span>
+        {/* Center: Mode Badge & Recording indicator */}
+        <div className="flex items-center space-x-2 shrink-0">
+          {/* Active Mode Badge (Mobile & Desktop) */}
+          <div className="flex items-center space-x-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[10px] sm:text-xs font-bold shrink-0">
+            {activeMode === 'smart' ? (
+              <span className="text-amber-400 flex items-center space-x-1" title="Smart AI (Groq 8B + Gemini Lite)">
+                <span>⭐</span>
+                <span className="hidden sm:inline">Smart AI</span>
+                <span className="sm:hidden">Smart</span>
+              </span>
+            ) : activeMode === 'unlimited' ? (
+              <span className="text-violet-400 flex items-center space-x-1" title="Unlimited AI (Personal Key)">
+                <span>♾️</span>
+                <span className="hidden sm:inline">Unlimited AI</span>
+                <span className="sm:hidden">Unlim</span>
+              </span>
+            ) : (
+              <span className="text-emerald-400 flex items-center space-x-1" title="Basic Mode (Fast Google Neural Edge)">
+                <span>🟢</span>
+                <span>Basic</span>
+              </span>
+            )}
           </div>
-        )}
+
+          {/* Live indicator if listening */}
+          {isListening && (
+            <div className="flex items-center space-x-1.5 sm:space-x-2 px-2.5 py-1 sm:px-3.5 sm:py-1.5 rounded-full bg-red-500/15 border border-red-500/30 shrink-0">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+              </span>
+              <span className="text-xs font-bold text-red-400">REC</span>
+              <span className="text-xs font-mono font-bold text-slate-200 border-l border-red-500/30 pl-1.5 sm:pl-2">
+                {formatTimer(meetingDuration)}
+              </span>
+            </div>
+          )}
+        </div>
 
         {/* Actions */}
         <div className="flex items-center space-x-1 sm:space-x-2 shrink-0">
