@@ -1,5 +1,30 @@
 import { getLanguageByCode } from '../constants/languages';
 
+// ---------------------------------------------------------------------------
+// Pure helper (exported for tests): words of `full` that were NOT already emitted.
+// Chrome keeps growing the SAME result index after we fallback-commit its interim text,
+// so we must only emit the new tail, otherwise the same phrase is emitted 2-3 times.
+// ---------------------------------------------------------------------------
+const normWord = (w) => w.toLowerCase().replace(/[\p{P}\p{S}]/gu, '');
+
+export function remainderAfter(committed, full) {
+  const fullText = (full || '').trim();
+  if (!committed || !committed.trim()) return fullText;
+  const a = committed.trim().split(/\s+/);
+  const b = fullText.split(/\s+/).filter(Boolean);
+  let i = 0;
+  while (i < a.length && i < b.length && normWord(a[i]) === normWord(b[i])) i++;
+  // Recognizer revised words inside the already-emitted part: skip as many words as were emitted.
+  if (i < a.length) i = Math.min(a.length, b.length);
+  return b.slice(i).join(' ');
+}
+
+const MAX_NETWORK_RETRIES = 6; // ~0.5+1+2+4+5+5 s of backoff before giving up
+const WATCHDOG_INTERVAL_MS = 4000;
+const WATCHDOG_STALE_MS = 15000; // no onstart/onresult for 15s => hard restart
+const MAX_PENDING_WORDS = 25; // continuous speech without a Chrome final: commit anyway
+const MAX_PENDING_MS = 8000;
+
 class SpeechService {
   constructor() {
     const SpeechRecognition =
@@ -14,11 +39,17 @@ class SpeechService {
     this.currentLanguage = 'en';
     this.restartTimeout = null;
     this.silenceTimer = null;
-    this.pauseDelayMs = 1000; // Responsive natural pause delay (1.0s, ideal for videos and conversation)
+    this.watchdog = null;
+    this.pauseDelayMs = 1000;
+    this.networkErrorCount = 0;
+    this.nextRestartDelay = null;
+    this.lastActivity = 0;
+    this.isMobile =
+      typeof navigator !== 'undefined' &&
+      /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
 
-    // Conversational Accumulator: keeps full sentence intact across natural pauses
-    this.accumulatedSentence = '';
-    this.lastInterim = '';
+    // Per-recognition-instance bookkeeping (reset on every new instance)
+    this.resetInstanceState();
 
     // Callbacks
     this.onResult = null;
@@ -33,6 +64,14 @@ class SpeechService {
     this.volumeCheckInterval = null;
   }
 
+  resetInstanceState() {
+    this.finalizedIdx = new Set(); // result indexes already emitted as Chrome finals
+    this.committedPrefix = new Map(); // result index -> text already emitted by fallback commit
+    this.pendingParts = []; // [{ idx, full, rest }] current un-emitted interim text
+    this.pendingSince = 0;
+    this.lastInterim = '';
+  }
+
   isSupported() {
     const isFirefox =
       typeof navigator !== 'undefined' && /Firefox/i.test(navigator.userAgent || '');
@@ -44,22 +83,15 @@ class SpeechService {
     this.pauseDelayMs = Math.max(600, Math.min(4000, seconds * 1000));
   }
 
+  get fallbackCommitMs() {
+    return Math.max(2500, this.pauseDelayMs * 2);
+  }
+
   async initAudioVisualizer() {
     try {
-      // CRITICAL FOR ANDROID & SAMSUNG DEVICES:
-      // Android enforces an exclusive hardware microphone lock.
-      // If getUserMedia opens the mic, SpeechRecognition fails with 'audio-capture' or stays deaf.
-      // Therefore, on mobile devices we do NOT open getUserMedia, giving SpeechRecognition exclusive mic access.
-      const isMobile =
-        typeof navigator !== 'undefined' &&
-        /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
-      if (isMobile) {
-        return;
-      }
-
-      if (this.audioContext && this.audioContext.state === 'running') {
-        return;
-      }
+      // Android enforces an exclusive hardware microphone lock; never open getUserMedia there.
+      if (this.isMobile) return;
+      if (this.audioContext && this.audioContext.state === 'running') return;
 
       if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
         this.microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -81,14 +113,10 @@ class SpeechService {
             }
             this.analyser.getByteFrequencyData(dataArray);
             let sum = 0;
-            for (let i = 0; i < dataArray.length; i++) {
-              sum += dataArray[i];
-            }
+            for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
             const average = sum / dataArray.length;
             const normalized = Math.min(100, Math.round((average / 128) * 100));
-            if (this.onVolumeChange) {
-              this.onVolumeChange(normalized);
-            }
+            if (this.onVolumeChange) this.onVolumeChange(normalized);
           }, 100);
         }
       }
@@ -114,9 +142,7 @@ class SpeechService {
       }
       this.audioContext = null;
     }
-    if (this.onVolumeChange) {
-      this.onVolumeChange(0);
-    }
+    if (this.onVolumeChange) this.onVolumeChange(0);
   }
 
   start(langCode = 'en') {
@@ -125,6 +151,7 @@ class SpeechService {
       if (this.onError) {
         this.onError({
           code: 'not-supported',
+          fatal: true,
           message: 'Speech recognition is not natively supported in this browser.'
         });
       }
@@ -134,10 +161,26 @@ class SpeechService {
     this.currentLanguage = langCode;
     this.userActive = true;
     this.isListening = true;
-    this.accumulatedSentence = '';
-    this.lastInterim = '';
     this.networkErrorCount = 0;
+    this.nextRestartDelay = null;
+    this.lastActivity = Date.now();
+    this.clearTimers();
 
+    try {
+      this.initAudioVisualizer();
+      this.setupRecognitionInstance();
+      this.safeStart();
+      this.startWatchdog();
+      if (this.onStatusChange) this.onStatusChange('listening');
+      return true;
+    } catch (err) {
+      console.error('Error starting speech recognition:', err);
+      if (this.onError) this.onError(err);
+      return false;
+    }
+  }
+
+  clearTimers() {
     if (this.restartTimeout) {
       clearTimeout(this.restartTimeout);
       this.restartTimeout = null;
@@ -146,18 +189,29 @@ class SpeechService {
       clearTimeout(this.silenceTimer);
       this.silenceTimer = null;
     }
-
-    try {
-      this.initAudioVisualizer();
-      this.setupRecognitionInstance();
-      this.safeStart();
-      if (this.onStatusChange) this.onStatusChange('listening');
-      return true;
-    } catch (err) {
-      console.error('Error starting speech recognition:', err);
-      if (this.onError) this.onError(err);
-      return false;
+    if (this.watchdog) {
+      clearInterval(this.watchdog);
+      this.watchdog = null;
     }
+  }
+
+  // Chrome sometimes stops delivering events without firing onend (long sessions,
+  // device changes). If nothing happened for 15s, rebuild the recognizer.
+  startWatchdog() {
+    if (this.watchdog) clearInterval(this.watchdog);
+    this.watchdog = setInterval(() => {
+      if (!this.userActive) return;
+      if (Date.now() - this.lastActivity < WATCHDOG_STALE_MS) return;
+      console.warn('[speech] watchdog: recognizer stalled, restarting');
+      this.commitPending();
+      this.lastActivity = Date.now();
+      try {
+        this.setupRecognitionInstance();
+        this.safeStart();
+      } catch (err) {
+        console.warn('[speech] watchdog restart failed:', err);
+      }
+    }, WATCHDOG_INTERVAL_MS);
   }
 
   safeStart() {
@@ -177,7 +231,6 @@ class SpeechService {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         // Immediately release mic stream tracks so recognition has exclusive access
         stream.getTracks().forEach((track) => track.stop());
-        // Small delay to allow mobile OS HAL to cleanly release the microphone lock
         await new Promise((resolve) => setTimeout(resolve, 80));
         return true;
       } catch (err) {
@@ -188,209 +241,213 @@ class SpeechService {
     return true;
   }
 
-  setupRecognitionInstance() {
-    if (this.recognition) {
-      try {
-        this.recognition.onend = null;
-        this.recognition.onerror = null;
-        this.recognition.onresult = null;
-        this.recognition.onstart = null;
-        this.recognition.abort();
-      } catch (e) {
-        // ignore
-      }
-    }
-
-    const langInfo = getLanguageByCode(this.currentLanguage);
-    const isMobile =
-      typeof navigator !== 'undefined' &&
-      /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
-    this.recognition = new this.SpeechRecognition();
-    // Continuous is true across all platforms to ensure seamless real-time listening without clipping words
-    this.recognition.continuous = true;
-    this.recognition.interimResults = true;
-    this.recognition.lang = langInfo.speechCode || 'ar-EG';
-    this.recognition.maxAlternatives = 1;
-
-    this.recognition.onstart = () => {
-      this.isListening = true;
-      if (this.onStatusChange) this.onStatusChange('listening');
-    };
-
-    this.recognition.onresult = (event) => {
-      let newlyFinalized = '';
-      let interimTranscript = '';
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        const item = event.results[i];
-        if (item.isFinal) {
-          newlyFinalized += item[0].transcript + ' ';
-        } else {
-          interimTranscript += item[0].transcript;
-        }
-      }
-
-      newlyFinalized = newlyFinalized.trim();
-      this.lastInterim = interimTranscript.trim();
-      this.networkErrorCount = 0;
-
-      // 1. Instant Commit: When the speech model finalizes a phrase, commit immediately!
-      if (newlyFinalized) {
-        if (this.silenceTimer) {
-          clearTimeout(this.silenceTimer);
-          this.silenceTimer = null;
-        }
-        if (this.onResult) {
-          this.onResult({
-            transcript: newlyFinalized,
-            isFinal: true,
-            confidence: 0.95
-          });
-        }
-      }
-
-      // 2. Real-time Live Interim Stream (Zero latency live words as you speak):
-      if (this.lastInterim) {
-        if (this.onResult) {
-          this.onResult({
-            transcript: this.lastInterim,
-            isFinal: false,
-            confidence: 0.85
-          });
-        }
-
-        // Natural pause timer (700ms): If the speaker pauses, commit the interim text as final
-        // WITHOUT aborting or stopping the mic! The microphone stays open continuously.
-        if (this.silenceTimer) clearTimeout(this.silenceTimer);
-        this.silenceTimer = setTimeout(() => {
-          this.silenceTimer = null;
-          if (this.lastInterim && this.userActive) {
-            const chunkToCommit = this.lastInterim;
-            this.lastInterim = '';
-            if (this.onResult) {
-              this.onResult({
-                transcript: chunkToCommit,
-                isFinal: true,
-                confidence: 0.92
-              });
-            }
-          }
-        }, 700);
-      }
-    };
-
-    this.recognition.onerror = (event) => {
-      console.warn('SpeechRecognition error:', event.error);
-      if (event.error === 'no-speech' || event.error === 'aborted') {
-        return;
-      }
-      if (event.error === 'audio-capture') {
-        this.stopAudioVisualizer();
-        setTimeout(() => {
-          if (this.userActive) this.safeStart();
-        }, 300);
-        return;
-      }
-      if (event.error === 'network') {
-        this.networkErrorCount = (this.networkErrorCount || 0) + 1;
-        if (this.networkErrorCount > 2) {
-          this.userActive = false;
-          this.isListening = false;
-          if (this.onStatusChange) this.onStatusChange('idle');
-          if (this.onError) {
-            this.onError({
-              code: 'network',
-              message: 'Browser speech recognition network error. Auto-switching to AI Voice engine.'
-            });
-          }
-          return;
-        }
-        setTimeout(() => {
-          if (this.userActive) this.safeStart();
-        }, 400);
-        return;
-      }
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        this.userActive = false;
-        this.isListening = false;
-        if (this.onStatusChange) this.onStatusChange('idle');
-        if (this.onError) {
-          this.onError({
-            code: event.error,
-            message: 'Browser speech recognition unavailable. Auto-switching to AI Voice engine.'
-          });
-        }
-      }
-    };
-
-    this.recognition.onend = () => {
-      if (this.lastInterim.trim()) {
-        const chunkToCommit = this.lastInterim.trim();
-        this.lastInterim = '';
-        if (this.onResult) {
-          this.onResult({
-            transcript: chunkToCommit,
-            isFinal: true,
-            confidence: 0.92
-          });
-        }
-      }
-
-      if (this.userActive) {
-        if (this.restartTimeout) clearTimeout(this.restartTimeout);
-        const restartDelay = isMobile ? 150 : 60;
-        this.restartTimeout = setTimeout(() => {
-          if (this.userActive) {
-            try {
-              this.setupRecognitionInstance();
-              this.safeStart();
-            } catch (err) {
-              console.warn('Recognition restart note:', err);
-            }
-          }
-        }, restartDelay);
-      } else {
-        this.isListening = false;
-        if (this.onStatusChange) this.onStatusChange('idle');
-      }
-    };
+  emit(transcript, isFinal, confidence) {
+    if (!transcript || !this.onResult) return;
+    this.onResult({ transcript, isFinal, confidence });
   }
 
-  commitSentence() {
+  // Emit current un-emitted interim text as a final line and remember it per result index,
+  // so when Chrome later finalizes (or extends) that same result we only emit the new tail.
+  commitPending() {
     if (this.silenceTimer) {
       clearTimeout(this.silenceTimer);
       this.silenceTimer = null;
     }
-    const toCommit = (this.lastInterim || '').trim();
-    if (!toCommit) return;
+    const parts = this.pendingParts;
+    if (!parts.length) return;
+    for (const p of parts) this.committedPrefix.set(p.idx, p.full);
+    const text = parts.map((p) => p.rest).join(' ').trim();
+    this.pendingParts = [];
+    this.pendingSince = 0;
     this.lastInterim = '';
-    if (this.onResult) {
-      this.onResult({
-        transcript: toCommit,
-        isFinal: true,
-        confidence: 0.95
-      });
+    this.emit(text, true, 0.9);
+  }
+
+  detachRecognition() {
+    if (!this.recognition) return;
+    try {
+      this.recognition.onend = null;
+      this.recognition.onerror = null;
+      this.recognition.onresult = null;
+      this.recognition.onstart = null;
+      this.recognition.abort();
+    } catch (e) {
+      // ignore
+    }
+    this.recognition = null;
+  }
+
+  // Unrecoverable failure: stop cleanly and let the app decide (switch engine or show stopped).
+  fail(code, message) {
+    this.commitPending();
+    this.userActive = false;
+    this.isListening = false;
+    this.clearTimers();
+    this.detachRecognition();
+    this.stopAudioVisualizer();
+    if (this.onError) {
+      this.onError({ code, message, fatal: true });
+    } else if (this.onStatusChange) {
+      this.onStatusChange('idle');
     }
   }
 
+  handleResult(event) {
+    this.lastActivity = Date.now();
+    this.networkErrorCount = 0;
+
+    const finals = [];
+    const parts = [];
+    for (let i = 0; i < event.results.length; i++) {
+      const item = event.results[i];
+      const full = (item[0]?.transcript || '').trim();
+      if (item.isFinal) {
+        if (this.finalizedIdx.has(i)) continue;
+        this.finalizedIdx.add(i);
+        const rest = remainderAfter(this.committedPrefix.get(i), full);
+        this.committedPrefix.delete(i);
+        if (rest) finals.push(rest);
+      } else if (full) {
+        const rest = remainderAfter(this.committedPrefix.get(i), full);
+        if (rest) parts.push({ idx: i, full, rest });
+      }
+    }
+
+    if (finals.length) {
+      this.emit(finals.join(' '), true, 0.95);
+    }
+
+    this.pendingParts = parts;
+    this.lastInterim = parts.map((p) => p.rest).join(' ').trim();
+
+    if (!this.lastInterim) {
+      this.pendingSince = 0;
+      if (this.silenceTimer) {
+        clearTimeout(this.silenceTimer);
+        this.silenceTimer = null;
+      }
+      return;
+    }
+
+    if (!this.pendingSince) this.pendingSince = Date.now();
+    this.emit(this.lastInterim, false, 0.85);
+
+    // Fast continuous speech (videos/lectures) where Chrome holds one result open for long:
+    // commit so subtitles keep flowing instead of one giant late line.
+    const words = this.lastInterim.split(/\s+/).length;
+    if (words >= MAX_PENDING_WORDS || Date.now() - this.pendingSince >= MAX_PENDING_MS) {
+      this.commitPending();
+      return;
+    }
+
+    // Fallback commit only after a real pause (Chrome normally finalizes first).
+    if (this.silenceTimer) clearTimeout(this.silenceTimer);
+    this.silenceTimer = setTimeout(() => {
+      this.silenceTimer = null;
+      if (this.userActive) this.commitPending();
+    }, this.fallbackCommitMs);
+  }
+
+  handleError(event) {
+    const error = event?.error;
+    console.warn('SpeechRecognition error:', error);
+    switch (error) {
+      case 'no-speech':
+      case 'aborted':
+        return; // onend will restart
+      case 'audio-capture':
+        // Desktop: our visualizer stream may be contending for the mic. Release it.
+        this.stopAudioVisualizer();
+        this.nextRestartDelay = 300;
+        return;
+      case 'network': {
+        this.networkErrorCount += 1;
+        if (this.networkErrorCount >= MAX_NETWORK_RETRIES) {
+          this.fail('network-fatal', 'Browser speech service unreachable. Switching to AI Voice engine.');
+          return;
+        }
+        this.nextRestartDelay = Math.min(5000, 500 * 2 ** (this.networkErrorCount - 1));
+        return;
+      }
+      case 'not-allowed':
+        this.fail('not-allowed', 'Microphone permission denied. Allow mic access and press Start again.');
+        return;
+      case 'service-not-allowed':
+        this.fail('service-not-allowed', 'Browser speech service is blocked. Switching to AI Voice engine.');
+        return;
+      case 'language-not-supported':
+        this.fail('not-supported', 'This language is not supported by browser speech. Switching to AI Voice engine.');
+        return;
+      default:
+        this.nextRestartDelay = 500;
+    }
+  }
+
+  handleEnd() {
+    // This instance is finished: its result indexes die with it, so emitting pending text is safe.
+    this.commitPending();
+
+    if (!this.userActive) {
+      this.isListening = false;
+      if (this.onStatusChange) this.onStatusChange('idle');
+      return;
+    }
+
+    const delay = this.nextRestartDelay ?? (this.isMobile ? 150 : 60);
+    this.nextRestartDelay = null;
+    if (this.restartTimeout) clearTimeout(this.restartTimeout);
+    this.restartTimeout = setTimeout(() => {
+      this.restartTimeout = null;
+      if (!this.userActive) return;
+      try {
+        this.setupRecognitionInstance();
+        this.safeStart();
+      } catch (err) {
+        console.warn('Recognition restart note:', err); // watchdog will retry
+      }
+    }, delay);
+  }
+
+  setupRecognitionInstance() {
+    this.detachRecognition();
+    this.resetInstanceState();
+
+    const langInfo = getLanguageByCode(this.currentLanguage);
+    const rec = new this.SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = langInfo?.speechCode || 'ar-EG';
+    rec.maxAlternatives = 1;
+
+    rec.onstart = () => {
+      this.lastActivity = Date.now();
+      this.isListening = true;
+      if (this.onStatusChange) this.onStatusChange('listening');
+    };
+    rec.onresult = (event) => this.handleResult(event);
+    rec.onerror = (event) => this.handleError(event);
+    rec.onend = () => this.handleEnd();
+
+    this.recognition = rec;
+  }
+
+  commitSentence() {
+    this.commitPending();
+  }
+
   forceCommit() {
-    this.commitSentence();
+    this.commitPending();
   }
 
   changeLanguage(langCode) {
     if (this.currentLanguage === langCode) return;
     this.currentLanguage = langCode;
-    this.commitSentence();
+    this.commitPending();
 
     if (this.userActive) {
-      if (this.recognition) {
-        try {
-          this.recognition.abort();
-        } catch (e) {
-          // ignore
-        }
-      }
-      setTimeout(() => {
+      if (this.restartTimeout) clearTimeout(this.restartTimeout);
+      this.restartTimeout = setTimeout(() => {
+        this.restartTimeout = null;
         if (this.userActive) {
           this.setupRecognitionInstance();
           this.safeStart();
@@ -402,35 +459,25 @@ class SpeechService {
   stop() {
     this.userActive = false;
     this.isListening = false;
-
-    if (this.silenceTimer) {
-      clearTimeout(this.silenceTimer);
-      this.silenceTimer = null;
-    }
-    if (this.restartTimeout) {
-      clearTimeout(this.restartTimeout);
-      this.restartTimeout = null;
-    }
-
-    // Commit any speech remaining in the accumulator
-    this.commitSentence();
-
+    this.commitPending();
+    this.clearTimers();
     if (this.recognition) {
       try {
         this.recognition.onresult = null;
         this.recognition.onend = null;
         this.recognition.onerror = null;
+        this.recognition.onstart = null;
         this.recognition.stop();
       } catch (e) {
         // ignore
       }
       this.recognition = null;
     }
-    this.accumulatedSentence = '';
-    this.lastInterim = '';
+    this.resetInstanceState();
     this.stopAudioVisualizer();
     if (this.onStatusChange) this.onStatusChange('idle');
   }
 }
 
 export const speechService = new SpeechService();
+export { SpeechService };

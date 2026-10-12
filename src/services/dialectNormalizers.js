@@ -1,315 +1,208 @@
 // Speech & Dialect Normalizer Engine
-// High-frequency spoken speech, oral contractions, and phonetic traps filter
-// Normalizes oral dialect into standard semantic phrases in <0.2ms before translation.
+// High-frequency spoken speech, oral contractions, and phonetic traps filter.
+// Applied ONLY on the Basic (Google/MyMemory) path; AI models read raw dialect natively.
+//
+// IMPORTANT: JavaScript `\b` only understands ASCII [A-Za-z0-9_], so it never matches
+// around Arabic/Urdu/Hindi/Cyrillic/Turkish letters. All rules are built with Unicode-aware
+// boundaries instead. Rules that change person, gender or meaning (e.g. "شغال" -> "يعمل",
+// "عايز" -> "أريد", "خلاص" -> "انتهى الأمر") were deliberately removed: a wrong rewrite is
+// worse than letting the translator see the original word.
 
-export function normalizeArabic(text) {
-  if (!text) return '';
-  let s = text.trim();
+const START = '(?<![\\p{L}\\p{M}\\p{N}_])';
+const END = '(?![\\p{L}\\p{M}\\p{N}_])';
 
-  const replacements = [
-    // Prepositional & locational idioms
-    [/\bفي النص\b|\bفي النُص\b|\bفالنص\b/gi, 'في منتصف الجملة'],
-    [/\bفي نص الكلام\b/gi, 'في منتصف الحديث'],
-    [/\bعالهوا\b|\bع الهوا\b/gi, 'بشكل مباشر'],
-    [/\bعلى طول\b|\bعطول\b/gi, 'مباشرة'],
-    [/\bمن تحت لتحت\b/gi, 'سراً'],
-    [/\bفي الأول\b|\bفالاول\b/gi, 'في البداية'],
-    [/\bفي الآخر\b|\bفالاخر\b/gi, 'في النهاية'],
-
-    // Verbs, continuous state & action
-    [/\bشغال ولا مش شغال\b/gi, 'هل يعمل أم لا يعمل'],
-    [/\bقاعد شغال\b|\bفاضل شغال\b|\bتفضل شغال\b|\bتبقى شغال\b/gi, 'تظل مستمراً في العمل'],
-    [/\bشغال\b/gi, 'يعمل'],
-    [/\bبيشتغل\b/gi, 'يعمل'],
-    [/\bبتشتغل\b/gi, 'تعمل'],
-    [/\bعمال يتكلم\b|\bعمال يتكلم\b/gi, 'يتحدث باستمرار'],
-    [/\bبيقطع كلامي\b|\bبتقطع كلامي\b/gi, 'يقاطع حديثي'],
-    [/\bبيقطع\b/gi, 'يتقطع'],
-    [/\bبيلف ويدور\b/gi, 'يراوغ'],
-    [/\bواخد باله\b/gi, 'منتبه'],
-    [/\bمش واخد باله\b/gi, 'غير منتبه'],
-    [/\bشايف\b/gi, 'يرى'],
-    [/\bباصص\b/gi, 'ينظر'],
-
-    // Negations & modals
-    [/\bمش راضي\b/gi, 'يرفض'],
-    [/\bمابيردش\b|\bما بيردش\b/gi, 'لا يجيب'],
-    [/\bمابيقفلش\b|\bما بيقفلش\b/gi, 'لا يتوقف عن العمل'],
-    [/\bمش فاهم\b/gi, 'لا أفهم'],
-    [/\bمش عارف\b/gi, 'لا أعلم'],
-    [/\bمش عايز\b|\bمش عاوز\b/gi, 'لا أريد'],
-    [/\bمش كده\b|\bمش كدا\b/gi, 'أليس كذلك'],
-    [/\bمش المفروض\b/gi, 'أليس من المفترض أن'],
-    [/\bمفيش\b|\bمافيش\b/gi, 'لا يوجد'],
-    [/\bعايز\b|\bعاوز\b/gi, 'أريد'],
-
-    // Addresses & Slang
-    [/\bيا عم الحج\b|\bيا حاج\b/gi, 'يا أخي'],
-    [/\bيا باشا\b|\bيا بيه\b/gi, 'يا سيدي'],
-    [/\bيا اسطى\b|\bيا أسطى\b/gi, 'يا سائق'],
-    [/\bيا صاحبي\b|\bيا راجل\b/gi, 'يا صديقي'],
-    [/\bيا حبيب قلبي\b/gi, 'يا عزيزي'],
-
-    // Possessives & Demonstratives
-    [/\bالكلام بتاعي\b/gi, 'حديثي'],
-    [/\bبتاعي\b/gi, 'الخاص بي'],
-    [/\bبتاعتي\b/gi, 'الخاصة بي'],
-    [/\bبتاعك\b/gi, 'الخاص بك'],
-    [/\bبتاعتك\b/gi, 'الخاصة بك'],
-    [/\bبتاعنا\b/gi, 'الخاص بنا'],
-    [/\bبتاعتنا\b/gi, 'الخاصة بنا'],
-    [/\bبتاعهم\b/gi, 'الخاص بهم'],
-    [/\bدلوقتي\b/gi, 'الآن'],
-    [/\bكده\b|\bكدا\b|\bكدهون\b/gi, 'هكذا'],
-    [/\bعشان\b|\bعلشان\b/gi, 'لكي'],
-    [/\bخلاص\b/gi, 'انتهى الأمر'],
-    [/\bيلا\b|\bيلّا\b/gi, 'هيا بنا'],
-
-    // Questions
-    [/\bليه\b/gi, 'لماذا'],
-    [/\bإيه\b|\bايه\b/gi, 'ماذا'],
-    [/\bازاي\b|\bإزاي\b/gi, 'كيف'],
-    [/\bفين\b/gi, 'أين'],
-    [/\bامتى\b/gi, 'متى'],
-    [/\bمين\b/gi, 'من'],
-
-    // Levantine & Gulf additions
-    [/\bشو\b/gi, 'ماذا'],
-    [/\bبدي\b/gi, 'أريد'],
-    [/\bما بدي\b/gi, 'لا أريد'],
-    [/\bهلق\b|\bهلأ\b/gi, 'الآن'],
-    [/\bكتير\b/gi, 'كثيراً'],
-    [/\bوايد\b/gi, 'كثيراً'],
-    [/\bزين\b/gi, 'جيد'],
-    [/\bشلونك\b/gi, 'كيف حالك'],
-    [/\bشلون\b/gi, 'كيف']
-  ];
-
-  for (const [pattern, replacement] of replacements) {
-    s = s.replace(pattern, replacement);
-  }
-  return s;
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function normalizeUrdu(text) {
-  if (!text) return '';
-  let s = text.trim();
-
-  const replacements = [
-    // Pharma / Medical loanword phonetic trap (stops "فارما -> تفضل" mistranslation)
-    [/\bفارما\b|\bpharma\b/gi, 'میڈیکل اسٹور'],
-    [/\bفارمیسی\b/gi, 'میڈیکل اسٹور'],
-
-    // Common spoken Urdu idioms & discourse markers
-    [/\bکوئی مسئلہ نہیں\b/gi, 'کوئی پریشانی نہیں'],
-    [/\bپتا نہیں\b/gi, 'معلوم نہیں'],
-    [/\bٹھیک ٹھاک\b/gi, 'بالکل ٹھیک'],
-    [/\bابھی کے ابھی\b/gi, 'فوراً'],
-    [/\bہو جائے گا\b/gi, 'مکمل ہو جائے گا'],
-    [/\bکیا حال ہے\b/gi, 'آپ کیسے ہیں'],
-    [/\bکیا چل رہا ہے\b/gi, 'کیا ہو رہا ہے']
-  ];
-
-  for (const [pattern, replacement] of replacements) {
-    s = s.replace(pattern, replacement);
-  }
-  return s;
+/**
+ * Build a rule: list of literal phrases (or raw regex sources via {re}) -> replacement.
+ * Longest phrases first so "مش واخد باله" wins over "واخد باله".
+ */
+function rule(phrases, replacement, { prefix = '' } = {}) {
+  const alts = phrases
+    .map((p) => (typeof p === 'string' ? escapeRegex(p).replace(/ /g, '\\s+') : p.re))
+    .sort((a, b) => b.length - a.length);
+  return [new RegExp(`${prefix}${START}(?:${alts.join('|')})${END}`, 'giu'), replacement];
 }
 
-export function normalizeHindi(text) {
+function applyRules(text, rules) {
   if (!text) return '';
   let s = text.trim();
-
-  const replacements = [
-    [/\bफार्मा\b|\bpharma\b/gi, 'दवाखाना'],
-    [/\bटेंशन मत लो\b/gi, 'चिंता मत करो'],
-    [/\bकोई बात नहीं\b/gi, 'कोई समस्या नहीं'],
-    [/\bएकदम सही\b/gi, 'बिल्कुल सही'],
-    [/\bअभी के अभी\b/gi, 'तुरंत'],
-    [/\bक्या चल रहा है\b/gi, 'क्या हो रहा है'],
-    [/\bहो जाएगा\b/gi, 'पूर्ण हो जाएगा']
-  ];
-
-  for (const [pattern, replacement] of replacements) {
+  for (const [pattern, replacement] of rules) {
     s = s.replace(pattern, replacement);
   }
-  return s;
+  return s.replace(/\s{2,}/g, ' ').trim();
 }
 
-export function normalizeTurkish(text) {
-  if (!text) return '';
-  let s = text.trim();
+const ARABIC_RULES = [
+  // Phrases (must run before their sub-words)
+  rule(['شغال ولا مش شغال', 'شغال ولا لا'], 'هل يعمل أم لا'),
+  rule(['مش واخد باله', 'مش واخده باله'], 'غير منتبه'),
+  rule(['بيقطع كلامي', 'بتقطع كلامي'], 'يقاطع كلامي'),
+  rule(['بيلف ويدور'], 'يراوغ'),
+  rule(['في نص الكلام'], 'في منتصف الكلام'),
+  rule(['في النص', 'في النُص', 'فالنص'], 'في المنتصف'),
+  rule(['عالهوا', 'ع الهوا', 'على الهوا'], 'على الهواء مباشرة'),
+  rule(['على طول', 'عطول', 'ع طول'], 'مباشرة'),
+  rule(['في الأول', 'في الاول', 'فالاول', 'فالأول'], 'في البداية'),
+  rule(['في الآخر', 'في الاخر', 'فالاخر', 'فالآخر'], 'في النهاية'),
+  rule(['يا عم الحج'], 'يا أخي'),
+  rule(['يا باشا', 'يا بيه'], 'يا سيدي'),
+  rule(['يا صاحبي'], 'يا صديقي'),
 
-  const replacements = [
-    [/\bn'oldu\b|\bnoldu\b/gi, 'ne oldu'],
-    [/\bn'apıyorsun\b|\bnapıyon\b/gi, 'ne yapıyorsun'],
-    [/\bbişey\b|\bbi şey\b/gi, 'bir şey'],
-    [/\baynen\b/gi, 'kesinlikle'],
-    [/\bvalla\b|\bvallahi\b/gi, 'gerçekten'],
-    [/\bfalan filan\b|\bfalan\b|\bfilan\b/gi, 've benzeri'],
-    [/\bhadi\b/gi, 'haydi'],
-    [/\byok ya\b/gi, 'hayır']
-  ];
+  // Negations with an unambiguous first-person reading in speech
+  rule(['مش فاهم', 'مش فاهمة'], 'لا أفهم'),
+  rule(['مش عارف', 'مش عارفة'], 'لا أعرف'),
+  rule(['مش كده', 'مش كدا'], 'أليس كذلك'),
+  rule(['ما بيردش', 'مابيردش'], 'لا يرد'),
+  rule(['مفيش', 'مافيش', 'ما فيش'], 'لا يوجد'),
+  rule(['ما بدي', 'مابدي'], 'لا أريد'),
 
-  for (const [pattern, replacement] of replacements) {
-    s = s.replace(pattern, replacement);
-  }
-  return s;
-}
+  // Possessives
+  rule(['بتاعي'], 'الخاص بي'),
+  rule(['بتاعتي'], 'الخاصة بي'),
+  rule(['بتاعك'], 'الخاص بك'),
+  rule(['بتاعتك'], 'الخاصة بك'),
+  rule(['بتاعنا'], 'الخاص بنا'),
+  rule(['بتاعتنا'], 'الخاصة بنا'),
+  rule(['بتاعهم'], 'الخاص بهم'),
 
-export function normalizeGerman(text) {
-  if (!text) return '';
-  let s = text.trim();
+  // Unambiguous adverbs / question words
+  rule(['دلوقتي', 'دلوقت', 'هلق', 'هلأ', 'هسه', 'هسع'], 'الآن'),
+  rule(['ازاي', 'إزاي'], 'كيف'),
+  rule(['شلونك'], 'كيف حالك'),
+  rule(['شلون'], 'كيف'),
+  rule(['فين', 'وين'], 'أين'),
+  rule(['امتى', 'إمتى'], 'متى'),
+  rule(['شو'], 'ماذا'),
+  rule(['بدي'], 'أريد'),
+  rule(['كتير'], 'كثيراً'),
+  rule(['وايد'], 'كثيراً')
+];
 
-  const replacements = [
-    [/\bnix\b/gi, 'nichts'],
-    [/\bgibt's\b/gi, 'gibt es'],
-    [/\bgeht's\b/gi, 'geht es'],
-    [/\bmach's\b/gi, 'mache es'],
-    [/\bdrauf\b/gi, 'darauf'],
-    [/\bdrin\b/gi, 'darin'],
-    [/\bdran\b/gi, 'daran'],
-    [/\bhalt\b/gi, 'eben'],
-    [/\bne\b/gi, 'nein']
-  ];
+const URDU_RULES = [
+  // Pharma loanword trap (was mistranslated as "تفضل")
+  rule(['فارما', 'فارمیسی', 'pharma', 'pharmacy'], 'میڈیکل اسٹور'),
+  rule(['پتا نہیں', 'پتہ نہیں'], 'معلوم نہیں'),
+  rule(['ابھی کے ابھی'], 'فوراً'),
+  rule(['کیا چل رہا ہے'], 'کیا ہو رہا ہے')
+];
 
-  for (const [pattern, replacement] of replacements) {
-    s = s.replace(pattern, replacement);
-  }
-  return s;
-}
+const HINDI_RULES = [
+  rule(['फार्मा', 'pharma'], 'दवाखाना'),
+  rule(['टेंशन मत लो', 'टेंशन मत लीजिए'], 'चिंता मत करो'),
+  rule(['अभी के अभी'], 'तुरंत'),
+  rule(['क्या चल रहा है'], 'क्या हो रहा है')
+];
 
-export function normalizeFrench(text) {
-  if (!text) return '';
-  let s = text.trim();
+const TURKISH_RULES = [
+  rule(["n'oldu", 'noldu'], 'ne oldu'),
+  rule(["n'apıyorsun", 'napıyon', 'napıyorsun'], 'ne yapıyorsun'),
+  rule(['bişey', 'bi şey'], 'bir şey'),
+  rule(['yok ya'], 'hayır')
+];
 
-  const replacements = [
-    [/\bouais\b/gi, 'oui'],
-    [/\bchuis\b|\bch'suis\b/gi, 'je suis'],
-    [/\bt'as\b/gi, 'tu as'],
-    [/\by'a\b/gi, 'il y a'],
-    [/\bfaut\b/gi, 'il faut'],
-    [/\bd'ac\b|\bd'acc\b/gi, "d'accord"],
-    [/\bboulot\b|\btaf\b/gi, 'travail'],
-    [/\btruc\b/gi, 'chose'],
-    [/\bmec\b|\bgars\b/gi, 'homme']
-  ];
+const GERMAN_RULES = [
+  rule(['nix'], 'nichts'),
+  rule(["gibt's", 'gibts'], 'gibt es'),
+  rule(["geht's", 'gehts'], 'geht es'),
+  rule(["mach's"], 'mache es')
+];
 
-  for (const [pattern, replacement] of replacements) {
-    s = s.replace(pattern, replacement);
-  }
-  return s;
-}
+const FRENCH_RULES = [
+  rule(['ouais'], 'oui'),
+  rule(['chuis', "ch'suis", "j'suis"], 'je suis'),
+  rule(["t'as"], 'tu as'),
+  // Guarded: do not turn an existing "il y a" / "il faut" into "il il ..."
+  rule(["y'a"], 'il y a', { prefix: '(?<!il\\s)' }),
+  rule(['faut'], 'il faut', { prefix: '(?<!il\\s)' }),
+  rule(["d'ac", "d'acc"], "d'accord"),
+  rule(['boulot', 'taf'], 'travail'),
+  rule(['truc'], 'chose')
+];
 
-export function normalizeRussian(text) {
-  if (!text) return '';
-  let s = text.trim();
+const RUSSIAN_RULES = [
+  rule(['щас', 'ща'], 'сейчас'),
+  rule(['чё', 'чо'], 'что'),
+  rule(['ваще'], 'вообще'),
+  rule(['неа'], 'нет')
+];
 
-  const replacements = [
-    [/\bщас\b|\bща\b/gi, 'сейчас'],
-    [/\bчё\b|\bче\b/gi, 'что'],
-    [/\bтипа\b/gi, 'вроде'],
-    [/\bкороче\b/gi, 'короче говоря'],
-    [/\bваще\b/gi, 'вообще'],
-    [/\bнеа\b/gi, 'нет'],
-    [/\bладно\b/gi, 'хорошо']
-  ];
+const UKRAINIAN_RULES = [
+  rule(['шо'], 'що'),
+  rule(['тіпа'], 'наче'),
+  rule(['неа'], 'ні')
+];
 
-  for (const [pattern, replacement] of replacements) {
-    s = s.replace(pattern, replacement);
-  }
-  return s;
-}
+const PIDGIN_RULES = [
+  rule(['how you dey'], 'how are you'),
+  rule(['how body'], 'how are you feeling'),
+  rule(['wetin dey happen', 'wetin dey sup'], 'what is happening'),
+  rule(['wetin you dey do'], 'what are you doing'),
+  rule(['wetin be dat', 'wetin be that'], 'what is that'),
+  rule(['wetin'], 'what'),
+  rule(['no wahala'], 'no problem'),
+  rule(['wahala'], 'trouble'),
+  rule(['abeg'], 'please'),
+  rule(['na so'], 'that is true'),
+  rule(['na lie'], 'that is a lie'),
+  rule(['make we'], 'let us'),
+  rule(['i dey go'], 'I am going'),
+  rule(['we dey go'], 'we are going'),
+  rule(['dey go'], 'going'),
+  rule(['dey come'], 'coming'),
+  rule(['i fit'], 'I can'),
+  rule(['you fit'], 'you can'),
+  rule(['comot'], 'leave'),
+  rule(['oya'], 'come on'),
+  rule(['abi'], 'right?'),
+  rule(['well well'], 'very well'),
+  rule(['small small'], 'gradually')
+];
 
-export function normalizeUkrainian(text) {
-  if (!text) return '';
-  let s = text.trim();
+const ENGLISH_RULES = [
+  rule(['gonna'], 'going to'),
+  rule(['wanna'], 'want to'),
+  rule(['gotta'], 'have to'),
+  rule(['dunno'], 'do not know'),
+  rule(['kinda'], 'kind of'),
+  rule(['sorta'], 'sort of'),
+  rule(['cuz', "'cause"], 'because'),
+  rule(['lemme'], 'let me'),
+  rule(['gimme'], 'give me')
+];
 
-  const replacements = [
-    [/\bшо\b/gi, 'що'],
-    [/\bтіпа\b/gi, 'наче'],
-    [/\bкоротше\b/gi, 'коротше кажучи'],
-    [/\bнеа\b/gi, 'ні'],
-    [/\bбувай\b/gi, 'до побачення']
-  ];
-
-  for (const [pattern, replacement] of replacements) {
-    s = s.replace(pattern, replacement);
-  }
-  return s;
-}
-
-export function normalizeNigerianPidgin(text) {
-  if (!text) return '';
-  let s = text.trim();
-
-  const replacements = [
-    [/\bhow you dey\b/gi, 'how are you'],
-    [/\bhow body\b/gi, 'how are you feeling'],
-    [/\bwetin dey happen\b|\bwetin dey sup\b/gi, 'what is happening'],
-    [/\bwetin you dey do\b/gi, 'what are you doing'],
-    [/\bwetin be dat\b|\bwetin be that\b/gi, 'what is that'],
-    [/\bwetin\b/gi, 'what'],
-    [/\bno wahala\b/gi, 'no problem'],
-    [/\bwahala\b/gi, 'trouble'],
-    [/\babeg\b/gi, 'please'],
-    [/\bna so\b/gi, 'that is true'],
-    [/\bna lie\b/gi, 'that is a lie'],
-    [/\bmake we\b/gi, 'let us'],
-    [/\bi dey go\b/gi, 'I am going'],
-    [/\bwe dey go\b/gi, 'we are going'],
-    [/\bdey go\b/gi, 'going'],
-    [/\bdey come\b/gi, 'coming'],
-    [/\bi fit\b/gi, 'I can'],
-    [/\byou fit\b/gi, 'you can'],
-    [/\bcomot\b/gi, 'leave'],
-    [/\boya\b/gi, 'come on'],
-    [/\babi\b/gi, 'right?'],
-    [/\bwell well\b/gi, 'very well'],
-    [/\bsmall small\b/gi, 'gradually']
-  ];
-
-  for (const [pattern, replacement] of replacements) {
-    s = s.replace(pattern, replacement);
-  }
-  return s;
-}
-
-export function normalizeEnglish(text) {
-  if (!text) return '';
-  let s = text.trim();
-
-  const replacements = [
-    [/\bgonna\b/gi, 'going to'],
-    [/\bwanna\b/gi, 'want to'],
-    [/\bgotta\b/gi, 'have to'],
-    [/\bdunno\b/gi, 'do not know'],
-    [/\bkinda\b/gi, 'kind of'],
-    [/\bsorta\b/gi, 'sort of'],
-    [/\bcuz\b|\b'cause\b/gi, 'because'],
-    [/\blemme\b/gi, 'let me'],
-    [/\bgimme\b/gi, 'give me']
-  ];
-
-  for (const [pattern, replacement] of replacements) {
-    s = s.replace(pattern, replacement);
-  }
-  return s;
-}
+export const normalizeArabic = (t) => applyRules(t, ARABIC_RULES);
+export const normalizeUrdu = (t) => applyRules(t, URDU_RULES);
+export const normalizeHindi = (t) => applyRules(t, HINDI_RULES);
+export const normalizeTurkish = (t) => applyRules(t, TURKISH_RULES);
+export const normalizeGerman = (t) => applyRules(t, GERMAN_RULES);
+export const normalizeFrench = (t) => applyRules(t, FRENCH_RULES);
+export const normalizeRussian = (t) => applyRules(t, RUSSIAN_RULES);
+export const normalizeUkrainian = (t) => applyRules(t, UKRAINIAN_RULES);
+export const normalizeNigerianPidgin = (t) => applyRules(t, PIDGIN_RULES);
+export const normalizeEnglish = (t) => applyRules(t, ENGLISH_RULES);
 
 export function normalizeSpeech(text, langCode) {
   if (!text || !text.trim()) return '';
-  switch (langCode) {
-    case 'ar': return normalizeArabic(text);
-    case 'ur': return normalizeUrdu(text);
-    case 'hi': return normalizeHindi(text);
-    case 'tr': return normalizeTurkish(text);
-    case 'de': return normalizeGerman(text);
-    case 'fr': return normalizeFrench(text);
-    case 'ru': return normalizeRussian(text);
-    case 'uk': return normalizeUkrainian(text);
-    case 'pcm': return normalizeNigerianPidgin(text);
-    case 'en': return normalizeEnglish(text);
-    default: return text;
+  try {
+    switch (langCode) {
+      case 'ar': return normalizeArabic(text);
+      case 'ur': return normalizeUrdu(text);
+      case 'hi': return normalizeHindi(text);
+      case 'tr': return normalizeTurkish(text);
+      case 'de': return normalizeGerman(text);
+      case 'fr': return normalizeFrench(text);
+      case 'ru': return normalizeRussian(text);
+      case 'uk': return normalizeUkrainian(text);
+      case 'pcm': return normalizeNigerianPidgin(text);
+      case 'en': return normalizeEnglish(text);
+      default: return text.trim();
+    }
+  } catch (err) {
+    // Never let normalization break translation
+    console.warn('normalizeSpeech failed, using raw text:', err);
+    return text.trim();
   }
 }

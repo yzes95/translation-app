@@ -136,6 +136,22 @@ export class TranslationEngine {
     this.lastModelUsed = 'groq:llama-3.1-8b-instant';
     this.onModeFallback = null;
     this.onFallbackNotice = null;
+    this.aiFailStreak = 0;
+  }
+
+  // A single slow/failed AI call only drops THAT line to Basic. The user is notified
+  // after 3 consecutive failures (and every 10 after), the selected mode is never changed.
+  reportAIFailure(mode, reason) {
+    this.aiFailStreak += 1;
+    const n = this.aiFailStreak;
+    if (this.onModeFallback && (n === 3 || (n > 3 && (n - 3) % 10 === 0))) {
+      this.onModeFallback({
+        fromMode: mode,
+        toMode: 'basic',
+        temporary: true,
+        reason: `${reason} Recent lines used Basic translation; ${mode === 'smart' ? 'Smart AI' : 'Unlimited AI'} retries automatically on every new line.`
+      });
+    }
   }
 
   getAIConfig() {
@@ -224,7 +240,7 @@ export class TranslationEngine {
     if (externalSignal && externalSignal.aborted) return '';
 
     const cleanText = text.trim();
-    const cacheKey = `${mode}|${sourceLang}|${targetLang}|${cleanText.toLowerCase()}`;
+    let cacheKey = `${mode}|${sourceLang}|${targetLang}|${cleanText.toLowerCase()}`;
 
     // 1. Check in-memory cache
     if (cache.has(cacheKey)) {
@@ -232,61 +248,48 @@ export class TranslationEngine {
     }
 
     // 2. Unlimited Mode: User-Configured AI API Key (Gemini or Groq)
+    // AI receives the RAW dialect text: LLMs understand colloquial speech natively, and
+    // rewriting it to MSA first loses person/gender/nuance.
     if (mode === 'unlimited') {
       const aiConfig = this.getAIConfig();
       if (aiConfig && aiConfig.apiKey && aiConfig.apiKey.trim()) {
         try {
           const aiResult = await this.translateWithAI(cleanText, sourceLang, targetLang, aiConfig);
           if (aiResult && aiResult.trim()) {
+            this.aiFailStreak = 0;
             cache.set(cacheKey, aiResult.trim());
             return aiResult.trim();
           }
+          this.reportAIFailure('unlimited', 'Personal AI key returned no result.');
         } catch (err) {
-          console.warn('Unlimited AI translation error, falling back to basic:', err);
-          if (this.onModeFallback) {
-            this.onModeFallback({
-              fromMode: 'unlimited',
-              toMode: 'basic',
-              reason: 'Personal AI key error. Switched to Basic Mode so your speech continues.'
-            });
-          }
+          console.warn('Unlimited AI translation error, this line uses Basic:', err);
+          this.reportAIFailure('unlimited', 'Personal AI key error.');
         }
       }
     }
 
     // 3. Smart Mode: Render Backend (Groq 8B instant LPU -> Gemini Flash-Lite)
     if (mode === 'smart') {
-      try {
-        const smartRes = await apiService.translateSmart(cleanText, sourceLang, targetLang);
-        if (smartRes && !smartRes.fallback && smartRes.translatedText) {
-          if (smartRes.modelUsed) {
-            this.lastModelUsed = smartRes.modelUsed;
-          }
-          cache.set(cacheKey, smartRes.translatedText);
-          return smartRes.translatedText;
-        } else if (smartRes?.fallback) {
-          if (this.onModeFallback) {
-            this.onModeFallback({
-              fromMode: 'smart',
-              toMode: 'basic',
-              reason: smartRes.message || 'Smart AI quota temporarily busy. Switched to Basic Mode so your speech continues.'
-            });
-          }
+      const smartRes = await apiService.translateSmart(cleanText, sourceLang, targetLang);
+      if (smartRes && !smartRes.fallback && smartRes.translatedText) {
+        this.aiFailStreak = 0;
+        if (smartRes.modelUsed) {
+          this.lastModelUsed = smartRes.modelUsed;
         }
-      } catch (err) {
-        console.warn('Smart mode call failed, falling back to basic:', err);
-        if (this.onModeFallback) {
-          this.onModeFallback({
-            fromMode: 'smart',
-            toMode: 'basic',
-            reason: 'Smart AI temporarily unreachable. Switched to Basic Mode so your speech continues.'
-          });
-        }
+        cache.set(cacheKey, smartRes.translatedText);
+        return smartRes.translatedText;
       }
+      this.reportAIFailure('smart', smartRes?.message || 'Smart AI busy.');
     }
 
-    // 4. Universal Speech & Dialect Pre-Processing (across all 11 languages)
-    const normalizedText = normalizeSpeech(cleanText, sourceLang);
+    // 4. Basic path (also the per-line fallback for AI modes; the mode itself is NOT changed).
+    // Results are cached under the BASIC key so a fallback never masks a future AI retry.
+    const basicKey = `basic|${sourceLang}|${targetLang}|${cleanText.toLowerCase()}`;
+    if (mode !== 'basic' && cache.has(basicKey)) {
+      return cache.get(basicKey);
+    }
+    cacheKey = basicKey;
+    const normalizedText = normalizeSpeech(cleanText, sourceLang) || cleanText;
     let queryText = normalizedText;
     let actualSource = sourceLang;
     if (sourceLang === 'pcm') {

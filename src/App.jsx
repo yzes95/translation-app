@@ -174,10 +174,10 @@ export function App() {
       setTimeout(() => setFallbackNotice(null), 5000);
     };
 
-    translationEngine.onModeFallback = ({ fromMode, toMode, reason }) => {
-      setActiveMode(toMode);
-      activeModeRef.current = toMode;
-      setFallbackNotice(reason || `Switched from ${fromMode} to ${toMode} mode.`);
+    // Transient AI failure: the line already used Basic. Keep the user's selected mode
+    // (it retries on every new line) and only inform them.
+    translationEngine.onModeFallback = ({ fromMode, reason }) => {
+      setFallbackNotice(reason || `${fromMode} AI is busy; recent lines used Basic.`);
       setTimeout(() => setFallbackNotice(null), 6000);
     };
 
@@ -193,23 +193,29 @@ export function App() {
 
     speechService.onError = (err) => {
       console.warn('Speech recognition reported:', err);
-      const isPermanentFail =
+      const msg = typeof err === 'string' ? err : err?.message;
+      const switchable =
         err?.code === 'not-supported' ||
         err?.code === 'service-not-allowed' ||
-        !speechService.isSupported();
+        err?.code === 'network-fatal';
 
-      if (isPermanentFail && isListeningRef.current && startAIVoiceListeningRef.current) {
+      if (err?.fatal && switchable && isListeningRef.current && startAIVoiceListeningRef.current) {
         setVoiceEngine('ai_voice');
         voiceEngineRef.current = 'ai_voice';
-        setFallbackNotice('Browser speech recognition unavailable. Auto-switched to Universal AI Voice Engine.');
-        setTimeout(() => setFallbackNotice(null), 5000);
+        setFallbackNotice(msg || 'Browser speech recognition unavailable. Switched to AI Voice engine.');
+        setTimeout(() => setFallbackNotice(null), 6000);
         startAIVoiceListeningRef.current();
-      } else {
-        const msg = typeof err === 'string' ? err : err?.message;
-        if (msg && err?.code !== 'no-speech' && err?.code !== 'aborted') {
-          setFallbackNotice(msg);
-          setTimeout(() => setFallbackNotice(null), 5000);
-        }
+        return;
+      }
+
+      if (err?.fatal) {
+        // Recognizer is dead: reflect it in the UI instead of showing a fake "listening" state.
+        setIsListening(false);
+        isListeningRef.current = false;
+      }
+      if (msg) {
+        setFallbackNotice(msg);
+        setTimeout(() => setFallbackNotice(null), 6000);
       }
     };
 
@@ -262,16 +268,12 @@ export function App() {
         setInterimTranscript('');
         setInterimTranslation('');
 
-        // Immediate zero-latency translation if preview was already translated during speech
+        // Reuse the live-preview translation ONLY for the exact same text
         let immediateTranslation = '';
-        if (
-          latestInterimTranslationRef.current &&
-          (latestInterimTranslationRef.current.text === transcript ||
-            transcript.includes(latestInterimTranslationRef.current.text) ||
-            latestInterimTranslationRef.current.text.includes(transcript))
-        ) {
+        if (latestInterimTranslationRef.current && latestInterimTranslationRef.current.text === transcript) {
           immediateTranslation = latestInterimTranslationRef.current.translation;
         }
+        latestInterimTranslationRef.current = null;
 
         const entryId = `entry-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
         const speakerNum = (entriesRef.current.length % 2) + 1;
@@ -428,6 +430,10 @@ export function App() {
     setInterimTranscript('');
     setInterimTranslation('');
     setMeetingDuration(0);
+    translationEngine.aiFailStreak = 0;
+    if (activeModeRef.current === 'smart') {
+      apiService.pingHealth().catch(() => {});
+    }
 
     const isBrowserSTTSupported = speechService.isSupported();
     const shouldUseAIVoice = sourceLang === 'yo' || !isBrowserSTTSupported;

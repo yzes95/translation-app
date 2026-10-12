@@ -82,7 +82,10 @@ class ApiService {
   }
 
   // Smart Mode translation via backend Gemini
-  async translateSmart(text, sourceLang, targetLang) {
+  async translateSmart(text, sourceLang, targetLang, timeoutMs = 6000) {
+    // Hard client timeout: without it a cold/slow backend leaves lines untranslated indefinitely.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const res = await fetch(`${API_BASE_URL}/api/translate`, {
         method: 'POST',
@@ -95,7 +98,8 @@ class ApiService {
           sourceLang,
           targetLang,
           sessionDurationSeconds: 4
-        })
+        }),
+        signal: controller.signal
       });
 
       const data = await res.json();
@@ -116,12 +120,17 @@ class ApiService {
         remainingMinutes: data.remainingMinutes
       };
     } catch (err) {
+      const timedOut = err?.name === 'AbortError';
       return {
         translatedText: '',
         fallback: true,
-        error: 'network',
-        message: 'Could not reach Smart AI server. Switched to Basic mode (lowest accuracy).'
+        error: timedOut ? 'timeout' : 'network',
+        message: timedOut
+          ? 'Smart AI server is slow (waking up or busy).'
+          : 'Could not reach Smart AI server.'
       };
+    } finally {
+      clearTimeout(timer);
     }
   }
 

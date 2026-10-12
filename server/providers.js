@@ -3,6 +3,14 @@
 
 const cooldowns = new Map(); // providerName -> uncoolTimestamp
 
+// Whole text-translation request must finish before the client's 6s timeout.
+const TEXT_BUDGET_MS = 4500;
+const MIN_ATTEMPT_MS = 400;
+function timeLeft(deadline, cap) {
+  if (!deadline) return cap;
+  return Math.max(0, Math.min(cap, deadline - Date.now()));
+}
+
 // Language display names
 export const LANGUAGE_NAMES = {
   en: 'English',
@@ -107,7 +115,7 @@ const geminiProvider = {
   name: 'gemini',
   isConfigured: () => Boolean(getGeminiKey()),
 
-  translateText: async ({ text, srcName, tgtName, dialectContext }) => {
+  translateText: async ({ text, srcName, tgtName, dialectContext, deadline }) => {
     const geminiKey = getGeminiKey();
     if (!geminiKey) throw new Error('Gemini key not configured');
 
@@ -116,10 +124,12 @@ const geminiProvider = {
     let lastError = null;
 
     for (const model of candidateModels) {
+      const budget = timeLeft(deadline, 5000);
+      if (budget < MIN_ATTEMPT_MS) break;
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
+        const timeout = setTimeout(() => controller.abort(), budget);
 
         const res = await fetch(url, {
           method: 'POST',
@@ -253,7 +263,7 @@ const groqProvider = {
   name: 'groq',
   isConfigured: () => Boolean(getGroqKey()),
 
-  translateText: async ({ text, srcName, tgtName, dialectContext }) => {
+  translateText: async ({ text, srcName, tgtName, dialectContext, deadline }) => {
     const groqKey = getGroqKey();
     if (!groqKey) throw new Error('Groq key not configured');
 
@@ -262,7 +272,7 @@ const groqProvider = {
     const url = 'https://api.groq.com/openai/v1/chat/completions';
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    const timeout = setTimeout(() => controller.abort(), timeLeft(deadline, 2500));
 
     const res = await fetch(url, {
       method: 'POST',
@@ -377,23 +387,25 @@ const cloudflareProvider = {
   name: 'cloudflare',
   isConfigured: () => Boolean(getCloudflareKey() && getCloudflareAccountId()),
 
-  translateText: async ({ text, srcName, tgtName, dialectContext }) => {
+  translateText: async ({ text, srcName, tgtName, dialectContext, deadline }) => {
     const key = getCloudflareKey();
     const accountId = getCloudflareAccountId();
     if (!key || !accountId) throw new Error('Cloudflare credentials not configured');
 
     const prompt = buildInterpreterPrompt(text, srcName, tgtName, dialectContext);
     const candidateModels = [
-      '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-      '@cf/meta/llama-3.1-8b-instruct'
+      '@cf/meta/llama-3.1-8b-instruct',
+      '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
     ];
     let lastError = null;
 
     for (const model of candidateModels) {
+      const budget = timeLeft(deadline, 8000);
+      if (budget < MIN_ATTEMPT_MS) break;
       try {
         const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
+        const timeout = setTimeout(() => controller.abort(), budget);
 
         const res = await fetch(url, {
           method: 'POST',
@@ -512,10 +524,17 @@ export async function runChain(method, args) {
 
   const now = Date.now();
   let lastError = null;
+  if (method === 'translateText' && !args.deadline) {
+    args = { ...args, deadline: now + TEXT_BUDGET_MS };
+  }
 
   for (const provider of CHAIN) {
     if (!provider.isConfigured()) continue;
     if (typeof provider[method] !== 'function') continue;
+    if (args.deadline && args.deadline - Date.now() < MIN_ATTEMPT_MS) {
+      lastError = lastError || new Error('Translation time budget exhausted');
+      break;
+    }
 
     // Check if forcefully bypassed for testing
     if (forceFail.includes(provider.name.toLowerCase())) {
