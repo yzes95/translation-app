@@ -1,5 +1,5 @@
 // API Service for communicating with the Render backend
-import { API_BASE_URL } from '../config/paymentConfig';
+import { API_BASE_URL } from '../config/paymentConfig.js';
 
 class ApiService {
   constructor() {

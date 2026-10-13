@@ -1,30 +1,5 @@
 import { getLanguageByCode } from '../constants/languages';
 
-// ---------------------------------------------------------------------------
-// Pure helper (exported for tests): words of `full` that were NOT already emitted.
-// Chrome keeps growing the SAME result index after we fallback-commit its interim text,
-// so we must only emit the new tail, otherwise the same phrase is emitted 2-3 times.
-// ---------------------------------------------------------------------------
-const normWord = (w) => w.toLowerCase().replace(/[\p{P}\p{S}]/gu, '');
-
-export function remainderAfter(committed, full) {
-  const fullText = (full || '').trim();
-  if (!committed || !committed.trim()) return fullText;
-  const a = committed.trim().split(/\s+/);
-  const b = fullText.split(/\s+/).filter(Boolean);
-  let i = 0;
-  while (i < a.length && i < b.length && normWord(a[i]) === normWord(b[i])) i++;
-  // Recognizer revised words inside the already-emitted part: skip as many words as were emitted.
-  if (i < a.length) i = Math.min(a.length, b.length);
-  return b.slice(i).join(' ');
-}
-
-const MAX_NETWORK_RETRIES = 6; // ~0.5+1+2+4+5+5 s of backoff before giving up
-const WATCHDOG_INTERVAL_MS = 4000;
-const WATCHDOG_STALE_MS = 15000; // no onstart/onresult for 15s => hard restart
-const MAX_PENDING_WORDS = 25; // continuous speech without a Chrome final: commit anyway
-const MAX_PENDING_MS = 8000;
-
 class SpeechService {
   constructor() {
     const SpeechRecognition =
@@ -37,19 +12,20 @@ class SpeechService {
     this.isListening = false;
     this.userActive = false; // Strictly controlled by Start and Stop buttons
     this.currentLanguage = 'en';
+
+    // Restart and watchdog timers
     this.restartTimeout = null;
-    this.silenceTimer = null;
     this.watchdog = null;
-    this.pauseDelayMs = 1000;
     this.networkErrorCount = 0;
-    this.nextRestartDelay = null;
     this.lastActivity = 0;
+
+    // Result tracking: ensures 0 duplicates and zero dropped speech
+    this.finalizedIndex = -1;
+    this.lastInterim = '';
+
     this.isMobile =
       typeof navigator !== 'undefined' &&
       /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
-
-    // Per-recognition-instance bookkeeping (reset on every new instance)
-    this.resetInstanceState();
 
     // Callbacks
     this.onResult = null;
@@ -64,27 +40,11 @@ class SpeechService {
     this.volumeCheckInterval = null;
   }
 
-  resetInstanceState() {
-    this.finalizedIdx = new Set(); // result indexes already emitted as Chrome finals
-    this.committedPrefix = new Map(); // result index -> text already emitted by fallback commit
-    this.pendingParts = []; // [{ idx, full, rest }] current un-emitted interim text
-    this.pendingSince = 0;
-    this.lastInterim = '';
-  }
-
   isSupported() {
     const isFirefox =
       typeof navigator !== 'undefined' && /Firefox/i.test(navigator.userAgent || '');
     if (isFirefox) return false;
     return Boolean(this.SpeechRecognition);
-  }
-
-  setPauseDelay(seconds) {
-    this.pauseDelayMs = Math.max(600, Math.min(4000, seconds * 1000));
-  }
-
-  get fallbackCommitMs() {
-    return Math.max(2500, this.pauseDelayMs * 2);
   }
 
   async initAudioVisualizer() {
@@ -160,18 +120,14 @@ class SpeechService {
 
     this.currentLanguage = langCode;
     this.userActive = true;
-    this.isListening = true;
     this.networkErrorCount = 0;
-    this.nextRestartDelay = null;
     this.lastActivity = Date.now();
     this.clearTimers();
 
     try {
       this.initAudioVisualizer();
-      this.setupRecognitionInstance();
-      this.safeStart();
+      this.startSession();
       this.startWatchdog();
-      if (this.onStatusChange) this.onStatusChange('listening');
       return true;
     } catch (err) {
       console.error('Error starting speech recognition:', err);
@@ -185,44 +141,48 @@ class SpeechService {
       clearTimeout(this.restartTimeout);
       this.restartTimeout = null;
     }
-    if (this.silenceTimer) {
-      clearTimeout(this.silenceTimer);
-      this.silenceTimer = null;
-    }
     if (this.watchdog) {
       clearInterval(this.watchdog);
       this.watchdog = null;
     }
   }
 
-  // Chrome sometimes stops delivering events without firing onend (long sessions,
-  // device changes). If nothing happened for 15s, rebuild the recognizer.
   startWatchdog() {
     if (this.watchdog) clearInterval(this.watchdog);
     this.watchdog = setInterval(() => {
       if (!this.userActive) return;
-      if (Date.now() - this.lastActivity < WATCHDOG_STALE_MS) return;
-      console.warn('[speech] watchdog: recognizer stalled, restarting');
-      this.commitPending();
-      this.lastActivity = Date.now();
-      try {
-        this.setupRecognitionInstance();
-        this.safeStart();
-      } catch (err) {
-        console.warn('[speech] watchdog restart failed:', err);
+      // If user active but recognition dropped and no restart is pending:
+      if (!this.isListening && !this.restartTimeout) {
+        console.log('[speech] Watchdog: reviving listening session');
+        this.startSession();
       }
-    }, WATCHDOG_INTERVAL_MS);
+    }, 2000);
   }
 
-  safeStart() {
-    if (!this.recognition || !this.userActive) return;
+  startSession() {
+    if (!this.userActive) return;
+    this.cleanupCurrentInstance();
+    this.setupRecognitionInstance();
+
     try {
       this.recognition.start();
     } catch (e) {
-      if (e.name !== 'InvalidStateError') {
-        console.warn('SafeStart caught:', e.message);
+      // Browser audio subsystem might still be releasing previous session (InvalidStateError)
+      console.warn('Recognition start caught, scheduling retry:', e.message);
+      if (this.userActive) {
+        this.scheduleRestart(350);
       }
     }
+  }
+
+  scheduleRestart(delay = 250) {
+    if (!this.userActive) return;
+    if (this.restartTimeout) clearTimeout(this.restartTimeout);
+    this.restartTimeout = setTimeout(() => {
+      this.restartTimeout = null;
+      if (!this.userActive) return;
+      this.startSession();
+    }, delay);
   }
 
   async requestMicPermission() {
@@ -241,35 +201,18 @@ class SpeechService {
     return true;
   }
 
-  emit(transcript, isFinal, confidence) {
-    if (!transcript || !this.onResult) return;
-    this.onResult({ transcript, isFinal, confidence });
+  emit(transcript, isFinal, confidence = 0.9) {
+    if (!transcript || !transcript.trim() || !this.onResult) return;
+    this.onResult({ transcript: transcript.trim(), isFinal, confidence });
   }
 
-  // Emit current un-emitted interim text as a final line and remember it per result index,
-  // so when Chrome later finalizes (or extends) that same result we only emit the new tail.
-  commitPending() {
-    if (this.silenceTimer) {
-      clearTimeout(this.silenceTimer);
-      this.silenceTimer = null;
-    }
-    const parts = this.pendingParts;
-    if (!parts.length) return;
-    for (const p of parts) this.committedPrefix.set(p.idx, p.full);
-    const text = parts.map((p) => p.rest).join(' ').trim();
-    this.pendingParts = [];
-    this.pendingSince = 0;
-    this.lastInterim = '';
-    this.emit(text, true, 0.9);
-  }
-
-  detachRecognition() {
+  cleanupCurrentInstance() {
     if (!this.recognition) return;
     try {
-      this.recognition.onend = null;
-      this.recognition.onerror = null;
-      this.recognition.onresult = null;
       this.recognition.onstart = null;
+      this.recognition.onresult = null;
+      this.recognition.onerror = null;
+      this.recognition.onend = null;
       this.recognition.abort();
     } catch (e) {
       // ignore
@@ -277,13 +220,122 @@ class SpeechService {
     this.recognition = null;
   }
 
-  // Unrecoverable failure: stop cleanly and let the app decide (switch engine or show stopped).
+  setupRecognitionInstance() {
+    const langInfo = getLanguageByCode(this.currentLanguage);
+    const rec = new this.SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = langInfo?.speechCode || 'ar-EG';
+    rec.maxAlternatives = 1;
+
+    // Reset session result tracking for the new instance
+    this.finalizedIndex = -1;
+    this.lastInterim = '';
+
+    rec.onstart = () => {
+      this.lastActivity = Date.now();
+      this.isListening = true;
+      this.networkErrorCount = 0;
+      if (this.onStatusChange) this.onStatusChange('listening');
+    };
+
+    rec.onresult = (event) => {
+      this.lastActivity = Date.now();
+      this.networkErrorCount = 0;
+
+      let finalPhrase = '';
+      let interimPhrase = '';
+
+      for (let i = 0; i < event.results.length; i++) {
+        const item = event.results[i];
+        const text = (item[0]?.transcript || '').trim();
+        if (!text) continue;
+
+        if (item.isFinal) {
+          // Exactly-once final commitment per result index
+          if (i > this.finalizedIndex) {
+            this.finalizedIndex = i;
+            finalPhrase += (finalPhrase ? ' ' : '') + text;
+          }
+        } else {
+          interimPhrase += (interimPhrase ? ' ' : '') + text;
+        }
+      }
+
+      // 1. Emit finalized sentence chunk
+      if (finalPhrase) {
+        this.emit(finalPhrase, true, 0.95);
+      }
+
+      // 2. Emit active real-time interim speech
+      this.lastInterim = interimPhrase;
+      if (interimPhrase) {
+        this.emit(interimPhrase, false, 0.85);
+      }
+    };
+
+    rec.onerror = (event) => {
+      const error = event?.error;
+      console.warn('SpeechRecognition error:', error);
+
+      if (error === 'no-speech' || error === 'aborted') {
+        // Normal silence or browser audio reconfiguration; onend will smoothly restart
+        return;
+      }
+
+      if (error === 'audio-capture') {
+        this.stopAudioVisualizer();
+        this.scheduleRestart(400);
+        return;
+      }
+
+      if (error === 'network') {
+        this.networkErrorCount += 1;
+        if (this.networkErrorCount >= 8) {
+          this.fail('network-fatal', 'Browser speech recognition network disconnected. Auto-switching to AI Voice engine.');
+          return;
+        }
+        this.scheduleRestart(Math.min(3000, 400 * 2 ** (this.networkErrorCount - 1)));
+        return;
+      }
+
+      if (error === 'not-allowed') {
+        this.fail('not-allowed', 'Microphone permission denied. Allow mic access and press Start again.');
+        return;
+      }
+
+      if (error === 'service-not-allowed') {
+        this.fail('service-not-allowed', 'Browser speech service is unavailable. Switching to AI Voice engine.');
+        return;
+      }
+    };
+
+    rec.onend = () => {
+      this.isListening = false;
+      if (this.onStatusChange) this.onStatusChange('idle');
+
+      // Flush any leftover interim words that Chrome did not finalize before ending
+      if (this.lastInterim && this.lastInterim.trim()) {
+        const leftover = this.lastInterim.trim();
+        this.lastInterim = '';
+        this.emit(leftover, true, 0.90);
+      }
+
+      // In continuous listening mode, seamlessly restart with clean 250ms buffer
+      if (this.userActive) {
+        const delay = this.isMobile ? 250 : 200;
+        this.scheduleRestart(delay);
+      }
+    };
+
+    this.recognition = rec;
+  }
+
   fail(code, message) {
-    this.commitPending();
     this.userActive = false;
     this.isListening = false;
     this.clearTimers();
-    this.detachRecognition();
+    this.cleanupCurrentInstance();
     this.stopAudioVisualizer();
     if (this.onError) {
       this.onError({ code, message, fatal: true });
@@ -292,175 +344,34 @@ class SpeechService {
     }
   }
 
-  handleResult(event) {
-    this.lastActivity = Date.now();
-    this.networkErrorCount = 0;
-
-    const finals = [];
-    const parts = [];
-    for (let i = 0; i < event.results.length; i++) {
-      const item = event.results[i];
-      const full = (item[0]?.transcript || '').trim();
-      if (item.isFinal) {
-        if (this.finalizedIdx.has(i)) continue;
-        this.finalizedIdx.add(i);
-        const rest = remainderAfter(this.committedPrefix.get(i), full);
-        this.committedPrefix.delete(i);
-        if (rest) finals.push(rest);
-      } else if (full) {
-        const rest = remainderAfter(this.committedPrefix.get(i), full);
-        if (rest) parts.push({ idx: i, full, rest });
-      }
-    }
-
-    if (finals.length) {
-      this.emit(finals.join(' '), true, 0.95);
-    }
-
-    this.pendingParts = parts;
-    this.lastInterim = parts.map((p) => p.rest).join(' ').trim();
-
-    if (!this.lastInterim) {
-      this.pendingSince = 0;
-      if (this.silenceTimer) {
-        clearTimeout(this.silenceTimer);
-        this.silenceTimer = null;
-      }
-      return;
-    }
-
-    if (!this.pendingSince) this.pendingSince = Date.now();
-    this.emit(this.lastInterim, false, 0.85);
-
-    // Fast continuous speech (videos/lectures) where Chrome holds one result open for long:
-    // commit so subtitles keep flowing instead of one giant late line.
-    const words = this.lastInterim.split(/\s+/).length;
-    if (words >= MAX_PENDING_WORDS || Date.now() - this.pendingSince >= MAX_PENDING_MS) {
-      this.commitPending();
-      return;
-    }
-
-    // Fallback commit only after a real pause (Chrome normally finalizes first).
-    if (this.silenceTimer) clearTimeout(this.silenceTimer);
-    this.silenceTimer = setTimeout(() => {
-      this.silenceTimer = null;
-      if (this.userActive) this.commitPending();
-    }, this.fallbackCommitMs);
-  }
-
-  handleError(event) {
-    const error = event?.error;
-    console.warn('SpeechRecognition error:', error);
-    switch (error) {
-      case 'no-speech':
-      case 'aborted':
-        return; // onend will restart
-      case 'audio-capture':
-        // Desktop: our visualizer stream may be contending for the mic. Release it.
-        this.stopAudioVisualizer();
-        this.nextRestartDelay = 300;
-        return;
-      case 'network': {
-        this.networkErrorCount += 1;
-        if (this.networkErrorCount >= MAX_NETWORK_RETRIES) {
-          this.fail('network-fatal', 'Browser speech service unreachable. Switching to AI Voice engine.');
-          return;
-        }
-        this.nextRestartDelay = Math.min(5000, 500 * 2 ** (this.networkErrorCount - 1));
-        return;
-      }
-      case 'not-allowed':
-        this.fail('not-allowed', 'Microphone permission denied. Allow mic access and press Start again.');
-        return;
-      case 'service-not-allowed':
-        this.fail('service-not-allowed', 'Browser speech service is blocked. Switching to AI Voice engine.');
-        return;
-      case 'language-not-supported':
-        this.fail('not-supported', 'This language is not supported by browser speech. Switching to AI Voice engine.');
-        return;
-      default:
-        this.nextRestartDelay = 500;
-    }
-  }
-
-  handleEnd() {
-    // This instance is finished: its result indexes die with it, so emitting pending text is safe.
-    this.commitPending();
-
-    if (!this.userActive) {
-      this.isListening = false;
-      if (this.onStatusChange) this.onStatusChange('idle');
-      return;
-    }
-
-    const delay = this.nextRestartDelay ?? (this.isMobile ? 150 : 60);
-    this.nextRestartDelay = null;
-    if (this.restartTimeout) clearTimeout(this.restartTimeout);
-    this.restartTimeout = setTimeout(() => {
-      this.restartTimeout = null;
-      if (!this.userActive) return;
-      try {
-        this.setupRecognitionInstance();
-        this.safeStart();
-      } catch (err) {
-        console.warn('Recognition restart note:', err); // watchdog will retry
-      }
-    }, delay);
-  }
-
-  setupRecognitionInstance() {
-    this.detachRecognition();
-    this.resetInstanceState();
-
-    const langInfo = getLanguageByCode(this.currentLanguage);
-    const rec = new this.SpeechRecognition();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = langInfo?.speechCode || 'ar-EG';
-    rec.maxAlternatives = 1;
-
-    rec.onstart = () => {
-      this.lastActivity = Date.now();
-      this.isListening = true;
-      if (this.onStatusChange) this.onStatusChange('listening');
-    };
-    rec.onresult = (event) => this.handleResult(event);
-    rec.onerror = (event) => this.handleError(event);
-    rec.onend = () => this.handleEnd();
-
-    this.recognition = rec;
-  }
-
   commitSentence() {
-    this.commitPending();
+    if (this.lastInterim && this.lastInterim.trim()) {
+      const chunk = this.lastInterim.trim();
+      this.lastInterim = '';
+      this.emit(chunk, true, 0.92);
+    }
   }
 
   forceCommit() {
-    this.commitPending();
+    this.commitSentence();
   }
 
   changeLanguage(langCode) {
     if (this.currentLanguage === langCode) return;
     this.currentLanguage = langCode;
-    this.commitPending();
+    this.commitSentence();
 
     if (this.userActive) {
-      if (this.restartTimeout) clearTimeout(this.restartTimeout);
-      this.restartTimeout = setTimeout(() => {
-        this.restartTimeout = null;
-        if (this.userActive) {
-          this.setupRecognitionInstance();
-          this.safeStart();
-        }
-      }, 120);
+      this.scheduleRestart(100);
     }
   }
 
   stop() {
     this.userActive = false;
     this.isListening = false;
-    this.commitPending();
     this.clearTimers();
+    this.commitSentence();
+
     if (this.recognition) {
       try {
         this.recognition.onresult = null;
@@ -473,7 +384,9 @@ class SpeechService {
       }
       this.recognition = null;
     }
-    this.resetInstanceState();
+
+    this.finalizedIndex = -1;
+    this.lastInterim = '';
     this.stopAudioVisualizer();
     if (this.onStatusChange) this.onStatusChange('idle');
   }

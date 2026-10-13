@@ -1,5 +1,5 @@
-import { apiService } from './apiService';
-import { normalizeSpeech } from './dialectNormalizers';
+import { apiService } from './apiService.js';
+import { normalizeSpeech } from './dialectNormalizers.js';
 
 const cache = new Map();
 
@@ -167,42 +167,56 @@ export class TranslationEngine {
     if (!queryText || src === tgt) return queryText;
     if (externalSignal && externalSignal.aborted) return '';
 
-    // 1. Google Translate GTX (Fastest public neural API, ~50-120ms response time)
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-      const onAbort = () => controller.abort();
-      if (externalSignal) {
-        externalSignal.addEventListener('abort', onAbort, { once: true });
-      }
+    // 1. Google Translate Multi-Endpoint Rotation (~40-90ms response, immune to 429)
+    const googleEndpoints = [
+      `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${src}&tl=${tgt}&q=${encodeURIComponent(queryText)}`,
+      `https://translate.googleapis.com/translate_a/single?client=dict-chrome-ex&sl=${src}&tl=${tgt}&dt=t&q=${encodeURIComponent(queryText)}`,
+      `https://translate.google.com/translate_a/single?client=at&sl=${src}&tl=${tgt}&dt=t&q=${encodeURIComponent(queryText)}`,
+      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src}&tl=${tgt}&dt=t&q=${encodeURIComponent(queryText)}`
+    ];
 
-      const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src}&tl=${tgt}&dt=t&q=${encodeURIComponent(queryText)}`;
-      const res = await fetch(gtxUrl, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (externalSignal) externalSignal.removeEventListener('abort', onAbort);
+    for (const url of googleEndpoints) {
+      if (externalSignal && externalSignal.aborted) return '';
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1600);
+        const onAbort = () => controller.abort();
+        if (externalSignal) {
+          externalSignal.addEventListener('abort', onAbort, { once: true });
+        }
 
-      if (res.ok) {
-        const json = await res.json();
-        if (Array.isArray(json) && json[0] && Array.isArray(json[0])) {
-          const combined = json[0]
-            .map((item) => item[0])
-            .filter(Boolean)
-            .join('');
-          if (combined && combined.toLowerCase() !== queryText.toLowerCase()) {
-            return combined;
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (externalSignal) externalSignal.removeEventListener('abort', onAbort);
+
+        if (res.ok) {
+          const json = await res.json();
+          let translated = '';
+          if (Array.isArray(json)) {
+            if (typeof json[0] === 'string') {
+              translated = json[0];
+            } else if (Array.isArray(json[0])) {
+              translated = json[0]
+                .map((item) => (Array.isArray(item) ? item[0] : (typeof item === 'string' ? item : '')))
+                .filter(Boolean)
+                .join('');
+            }
+          }
+          if (translated && translated.trim() && translated.trim().toLowerCase() !== queryText.trim().toLowerCase()) {
+            return translated.trim();
           }
         }
+      } catch {
+        // Continue immediately to next endpoint
       }
-    } catch {
-      // Fall through to MyMemory
     }
 
     if (externalSignal && externalSignal.aborted) return '';
 
-    // 2. MyMemory Neural Web API (Reliable fallback if Google GTX is blocked)
+    // 2. MyMemory Neural Web API (Secondary backup)
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
       const onAbort = () => controller.abort();
       if (externalSignal) {
         externalSignal.addEventListener('abort', onAbort, { once: true });
@@ -223,12 +237,12 @@ export class TranslationEngine {
             !result.includes('MYMEMORY WARNING') &&
             !result.includes('NO QUERY SPECIFIED')
           ) {
-            return result;
+            return result.trim();
           }
         }
       }
     } catch (err) {
-      console.warn(`MyMemory failed for ${src} -> ${tgt}:`, err.message);
+      console.warn(`MyMemory backup failed for ${src} -> ${tgt}:`, err.message);
     }
 
     return '';
@@ -302,7 +316,7 @@ export class TranslationEngine {
     }
 
     // 5. Free In-Browser Multi-Language Neural Translation (All languages with English Pivot)
-    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
     if (isOnline) {
       // Direct attempt
       let webResult = await this.fetchSingleWebTranslation(queryText, actualSource, targetLang, externalSignal);

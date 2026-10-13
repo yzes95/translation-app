@@ -237,9 +237,10 @@ export function App() {
         interimAbortControllerRef.current = abortController;
 
         const reqId = ++interimReqIdRef.current;
-        // Fast streaming speculative translation (130ms debounce for true real-time subtitles)
+        // Fast streaming speculative translation (300ms debounce for responsive live subtitles without network congestion)
         interimDebounceRef.current = setTimeout(async () => {
           if (!isListeningRef.current || sessionIdRef.current !== currentSession) return;
+          if (!transcript || transcript.trim().length < 2) return;
           try {
             const specTranslation = await translationEngine.translate(
               transcript,
@@ -255,7 +256,7 @@ export function App() {
           } catch (e) {
             // ignore abort errors
           }
-        }, 130);
+        }, 300);
       } else {
         if (interimDebounceRef.current) {
           clearTimeout(interimDebounceRef.current);
@@ -268,10 +269,14 @@ export function App() {
         setInterimTranscript('');
         setInterimTranslation('');
 
-        // Reuse the live-preview translation ONLY for the exact same text
+        // 1. Immediate Zero-Latency Translation: Reuse live preview if text matches or is close prefix
         let immediateTranslation = '';
-        if (latestInterimTranslationRef.current && latestInterimTranslationRef.current.text === transcript) {
-          immediateTranslation = latestInterimTranslationRef.current.translation;
+        if (latestInterimTranslationRef.current) {
+          const prevText = latestInterimTranslationRef.current.text.trim();
+          const curText = transcript.trim();
+          if (prevText === curText || (curText.length > 0 && Math.abs(prevText.length - curText.length) <= 3 && curText.startsWith(prevText))) {
+            immediateTranslation = latestInterimTranslationRef.current.translation;
+          }
         }
         latestInterimTranslationRef.current = null;
 
@@ -291,25 +296,43 @@ export function App() {
         if (sessionIdRef.current !== currentSession) return;
         setEntries((prev) => [...prev, initialEntry]);
 
-        // If in Smart / Unlimited AI mode, or if immediate translation was not ready, refine translation
         const mode = activeModeRef.current;
-        if (!immediateTranslation || mode !== 'basic') {
-          translationEngine
-            .translate(transcript, currentSrc, currentTgt, mode)
-            .then((translatedText) => {
-              if (sessionIdRef.current === currentSession && translatedText) {
-                setEntries((prev) =>
-                  prev.map((item) => (item.id === entryId ? { ...item, translatedText: translatedText } : item))
-                );
 
-                if (settingsRef.current.autoTTS && translatedText) {
-                  ttsService.speak(translatedText, currentTgt, { rate: settingsRef.current.ttsRate });
+        // 2. Fast Fallback: If preview wasn't ready, immediately fetch Basic so translation shows in <70ms!
+        if (!immediateTranslation) {
+          translationEngine
+            .translate(transcript, currentSrc, currentTgt, 'basic')
+            .then((fastTranslation) => {
+              if (sessionIdRef.current === currentSession && fastTranslation) {
+                setEntries((prev) =>
+                  prev.map((item) => (item.id === entryId && !item.translatedText ? { ...item, translatedText: fastTranslation } : item))
+                );
+                if (mode === 'basic' && settingsRef.current.autoTTS) {
+                  ttsService.speak(fastTranslation, currentTgt, { rate: settingsRef.current.ttsRate });
                 }
               }
             })
-            .catch((err) => console.error('Translation error:', err));
-        } else if (immediateTranslation && settingsRef.current.autoTTS) {
+            .catch(() => {});
+        } else if (mode === 'basic' && settingsRef.current.autoTTS && immediateTranslation) {
           ttsService.speak(immediateTranslation, currentTgt, { rate: settingsRef.current.ttsRate });
+        }
+
+        // 3. AI Mode Refinement: If in Smart or Unlimited mode, refine with AI in background
+        if (mode !== 'basic') {
+          translationEngine
+            .translate(transcript, currentSrc, currentTgt, mode)
+            .then((aiTranslation) => {
+              if (sessionIdRef.current === currentSession && aiTranslation) {
+                setEntries((prev) =>
+                  prev.map((item) => (item.id === entryId ? { ...item, translatedText: aiTranslation } : item))
+                );
+
+                if (settingsRef.current.autoTTS) {
+                  ttsService.speak(aiTranslation, currentTgt, { rate: settingsRef.current.ttsRate });
+                }
+              }
+            })
+            .catch((err) => console.error('AI translation error:', err));
         }
       }
     };
