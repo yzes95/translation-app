@@ -3,132 +3,176 @@
 > **Empowering inclusive, multilingual collaboration across borders, cultures, and native languages.**
 
 [![GitHub Pages](https://img.shields.io/badge/Hosted%20On-GitHub%20Pages-blue?logo=github)](https://yzes95.github.io/translation-app/)
-[![PWA Ready](https://img.shields.io/badge/PWA-Offline%20Ready-emerald?logo=pwa)](https://yzes95.github.io/translation-app/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Android%20%7C%20iOS-indigo)](#-installation-options-pwa-vs-apk)
+[![PWA Ready](https://img.shields.io/badge/PWA-Installable-emerald?logo=pwa)](https://yzes95.github.io/translation-app/)
+[![Status](https://img.shields.io/badge/Status-Beta-orange)](#-project-status)
+
+---
+
+## 📌 Project Status
+
+**Beta, actively developed.** The web app (PWA) is live on GitHub Pages and the translation backend runs on Render's free tier (`render.yaml`).
+
+| Area | Status |
+|---|---|
+| Live speech → translation → read-aloud | ✅ Working (browser-dependent, see [Known Limitations](#-known-limitations)) |
+| Meeting summary (decisions, action items, export) | ✅ Working |
+| Lecture & audio notes (record or upload audio/video) | ✅ Working, needs the AI backend or a personal API key |
+| Server-side AI translation (Smart mode) with provider fallback | ✅ Implemented (`server/`) |
+| Stripe "tip jar" support page | ✅ Implemented (needs Stripe keys on the server) |
+| Android `.apk` | ❌ **No APK release is published yet.** The install dialog mentions it, but there are no GitHub Releases. Use the PWA. |
+| User accounts / paid plans | ❌ Not implemented (usage is limited per anonymous user) |
+| Automated tests | ❌ None yet (only `oxlint`) |
 
 ---
 
 ## 💡 The Problem & The Mission
 
-### The Challenge in Today's Global Teams
-In today’s interconnected global economy, cross-functional teams, medical missions, international conferences, and multinational businesses bring together talented individuals from vastly different linguistic and cultural backgrounds. 
+In global teams, medical missions, conferences and multinational businesses, live meetings held in one lingua franca often cause:
 
-However, live meetings held in a single lingua franca (such as English) often introduce significant friction:
-- **Cognitive Exhaustion & Misunderstandings**: Non-native speakers must mentally translate spoken dialogue in real-time, often missing critical nuances, technical terms, or fast-paced conversational shifts.
-- **Participation Hesitation**: Valuable domain experts frequently remain silent or hesitant to contribute because they worry about their pronunciation or immediate fluency.
-- **Unclear Deliverables**: When the meeting ends, participants frequently leave with ambiguous interpretations of what was agreed upon, leading to misaligned priorities and lost productivity.
+- **Cognitive exhaustion & misunderstandings**: non-native speakers translate in their heads and miss nuance.
+- **Participation hesitation**: domain experts stay silent because they worry about fluency.
+- **Unclear deliverables**: people leave with different ideas of what was agreed.
 
-### The Mission of LinguaFlow
-**LinguaFlow was created to eliminate the linguistic divide.** It acts as an ambient, respectful meeting companion that:
-1. **Listens continuously** to whatever language is being spoken in the room.
-2. **Translates speech in real time** into each participant’s native language with proper typography and native script direction (including full **Right-to-Left (RTL)** for Arabic and Urdu).
-3. **Automatically distills a Conversational Summary**: If enabled, the app produces structured meeting minutes—including an Executive Overview, Key Discussion Points, Consensus Decisions, and an **interactive Action Items Checklist** with assignees.
-
-Every participant leaves the room with complete clarity, aligned priorities, and zero doubt about their action items.
+**LinguaFlow** is a meeting companion that listens, translates in real time into each participant's language (including full RTL layout for Arabic and Urdu), and can produce structured meeting minutes with an action-item checklist.
 
 ---
 
-## 🌐 Supported Languages
+## 🌐 Languages
 
-LinguaFlow offers bi-directional speech recognition and translation across 9 major world languages:
+The language list is defined in [`src/constants/languages.js`](src/constants/languages.js). The core UI languages are:
 
-| Language | Native Script | Code | Script Direction | Live Speech (STT) | Live Voice (TTS) |
-|---|---|---|---|---|---|
-| **English** | English | `en` | Left-to-Right | ✅ | ✅ |
-| **Arabic** | العربية | `ar` | **Right-to-Left (RTL)** | ✅ | ✅ |
-| **Urdu** | اردو | `ur` | **Right-to-Left (RTL)** | ✅ | ✅ |
-| **German** | Deutsch | `de` | Left-to-Right | ✅ | ✅ |
-| **French** | Français | `fr` | Left-to-Right | ✅ | ✅ |
-| **Hindi** | हिन्दी | `hi` | Left-to-Right | ✅ | ✅ |
-| **Russian** | Русский | `ru` | Left-to-Right | ✅ | ✅ |
-| **Ukrainian** | Українська | `uk` | Left-to-Right | ✅ | ✅ |
-| **Turkish** | Türkçe | `tr` | Left-to-Right | ✅ | ✅ |
+| Language | Code | Direction |
+|---|---|---|
+| English | `en` | LTR |
+| Arabic | `ar` | **RTL** |
+| Urdu | `ur` | **RTL** |
+| German | `de` | LTR |
+| French | `fr` | LTR |
+| Hindi | `hi` | LTR |
+| Russian | `ru` | LTR |
+| Ukrainian | `uk` | LTR |
+| Turkish | `tr` | LTR |
 
----
-
-## ✨ Core Features
-
-### 🎙️ 1. Live Meeting Audio Capture & Simultaneous Translation
-- **Continuous Speech Recognition**: Handles extended meeting sessions with automatic reconnection.
-- **Live Soundwave Visualizer**: Animated volume bars provide immediate visual feedback that your microphone is capturing clear room audio.
-- **Turn-Taking Dialogue Feed**: Automatically organizes dialogue with timestamps, alternating speaker labels (`Speaker 1`, `Speaker 2`), original utterances, and translated text.
-- **Simulate Speech Mode**: Test and demo realistic multi-turn meeting exchanges in any language pair with a single click, even without an active speaker in the room.
-- **Audio Read-Aloud (TTS)**: Hear translations spoken aloud with native accents, adjustable voice pitch, and playback speeds.
-
-### 📋 2. Conversational Summary Producer (Toggleable)
-- **Executive Overview (TL;DR)**: Concise multi-sentence briefing summarizing the core focus of the session in your chosen language.
-- **Key Discussion Points**: Grouped, high-signal highlights extracted from dialogue.
-- **Decisions Made**: Distinct log of consensus points, approvals, and agreements reached.
-- **Action Items Checklist**: Interactive checkboxes with assigned speakers and tasks.
-- **One-Click Export**: Save meeting minutes as Markdown (`.md`), copy formatted text, or retain in your device's persistent archive.
-
-### 🔒 3. 100% Front-End & Offline-First Privacy
-- **Zero Backend**: All processing happens client-side in the user's browser.
-- **No Cloud Transcripts**: Meeting audio and transcripts never leave your device to an external app backend.
-- **Persistent Local Archive**: Past meetings and generated summaries are saved in your browser's private **IndexedDB** using Dexie.js.
+The backend prompts also include Spanish, Nigerian Pidgin (`pcm`) and Yoruba (`yo`), plus dialect hints and speech normalizers for colloquial Arabic (Egyptian, Levantine, Gulf). Speech recognition and voice quality depend on the browser and operating system voices installed, so **not every language works equally well for speaking and listening**.
 
 ---
 
-## 📱 Installation Options: PWA vs. APK
+## ✨ Features
 
-LinguaFlow gives users on mobile and desktop full flexibility to choose how they run the app:
+### 🎙️ 1. Live Meeting Translation
+- Continuous speech recognition (Web Speech API) with automatic restart.
+- Live sound-wave visualizer and a turn-based transcript feed with timestamps and speaker labels.
+- Fast streaming "speculative" translation, refined by AI in the background in Smart and Unlimited modes.
+- Read-aloud of translations (Web Speech Synthesis) with adjustable voice settings.
+- Simulated-speech mode to demo a conversation without a real speaker.
+- Live translation overlay and history drawer.
+
+### 🧠 2. Three Translation Modes
+| Mode | How it works |
+|---|---|
+| **Basic** | Free public translation endpoints directly from the browser (Google Translate web endpoint, MyMemory as backup). No sign-in. |
+| **Smart** | Calls the LinguaFlow server, which uses a provider chain (**Gemini → Groq → Cloudflare Workers AI**). Limited to **30 minutes per day per user** (in-memory quota). |
+| **Unlimited** | Uses your **own Gemini API key** stored in your browser (`localStorage`). See the in-app API key guide. |
+
+### 📋 3. Conversational Summary Producer
+- Executive overview, key discussion points, decisions, and an interactive action-items checklist.
+- Uses Chrome's built-in AI summarizer when available, otherwise a **local rule-based extractor in the browser**.
+- Export as Markdown, copy as text, or keep in the local archive.
+
+### 🎓 4. Lecture & Audio Notes
+- Record long audio or upload audio/video recordings.
+- The server (or your own key) produces a transcript and summary in `lecture`, `meeting` or `verbatim` format.
+
+### 💛 5. Support / Tips
+- Optional Stripe Checkout "tip" flow handled by the server (`/api/tips/checkout` and a webhook).
+
+---
+
+## 🔒 Privacy: what stays on your device and what does not
+
+> Earlier versions of this README claimed "100% front-end, nothing leaves your device". **That is not accurate for the current version.**
+
+- **Stored locally**: meeting history and summaries are saved in your browser's IndexedDB (Dexie). Your personal API key is kept in `localStorage`.
+- **Sent to third parties** (depending on mode):
+  - **Basic mode**: the text being translated goes to Google's and/or MyMemory's public translation endpoints.
+  - **Smart mode**: text (and audio for lecture notes) goes to the LinguaFlow server, which forwards it to Gemini, Groq or Cloudflare AI.
+  - **Unlimited mode**: text goes directly from your browser to Google Gemini using your key.
+  - **Speech recognition**: Chrome and Edge's Web Speech API typically sends audio to the browser vendor's speech service.
+- There are no user accounts, and the app has no analytics of its own. A formal privacy policy has not been written yet.
+
+---
+
+## 📱 Installation
+
+### Progressive Web App (PWA)
+- **Android**: Chrome → ⋮ → *Install app* / *Add to Home screen*.
+- **iPhone / iPad**: Safari → Share → *Add to Home Screen*.
+- **Windows / macOS**: Chrome or Edge → install icon in the address bar.
+- The app shell works offline, but **translation needs an internet connection** in every mode.
+
+### Android APK
+Not published yet. Watch the [Releases page](https://github.com/yzes95/translation-app/releases).
+
+---
+
+## 🏗️ Architecture & Tech Stack
 
 ```
-                          [ LinguaFlow Application ]
-                                      |
-         +----------------------------+----------------------------+
-         |                                                         |
-  [ Option A: PWA ]                                         [ Option B: APK ]
-  • Instant 1-tap install                                   • Standalone Android package
-  • Works on iOS, Android, Windows Desktop                  • Downloadable via GitHub Releases
-  • 0 MB initial download                                   • Sideloadable on any Android phone
-  • Auto-updates via Service Worker                         • Direct offline binary
+Browser (React PWA)
+ ├─ Web Speech API  ──► speech-to-text / text-to-speech
+ ├─ Dexie (IndexedDB) ► local history & summaries
+ ├─ Basic mode ─────► Google web translate / MyMemory
+ ├─ Unlimited mode ─► Gemini API (user's own key)
+ └─ Smart mode ─────► LinguaFlow server (Express on Render)
+                        ├─ provider chain: Gemini → Groq → Cloudflare Workers AI
+                        ├─ daily usage quota (in-memory)
+                        └─ Stripe tips (checkout + webhook)
 ```
 
-### Option A: Progressive Web App (PWA) — *Recommended*
-- **Android**: Open the web link in Chrome ➔ Tap `⋮` (menu) ➔ Select **"Install App"** or **"Add to Home screen"**.
-- **iPhone / iPad (iOS)**: Open the web link in Safari ➔ Tap the **Share** button (box with upward arrow) ➔ Select **"Add to Home Screen"**.
-- **Windows / macOS**: Open in Chrome or Edge ➔ Click the **Install** icon in the address bar to install as a standalone desktop program.
-- *Once installed, the PWA works completely offline.*
-
-### Option B: Android Standalone Package (.APK)
-- For users who prefer a direct `.apk` installer without using a browser:
-  1. Visit the [Releases Page](https://github.com/yzes95/translation-app/releases).
-  2. Download the latest `LinguaFlow.apk`.
-  3. Open the file on your Android device and allow "Install from Unknown Sources" if prompted.
+- **Frontend**: React 19, Vite, Tailwind CSS v4, Lucide icons, `vite-plugin-pwa` (Workbox).
+- **Backend** (`server/`): Node + Express, Stripe, multi-provider AI chain with cooldowns.
+  - Endpoints: `GET /health`, `GET /api/usage`, `POST /api/translate`, `POST /api/translate-audio`, `POST /api/summary`, `POST /api/tips/checkout`, `POST /api/tips/webhook`.
+- **Hosting**: GitHub Pages workflow (`.github/workflows/deploy.yml`) and a Render blueprint (`render.yaml`) for the static site and API.
 
 ---
 
-## 🏗️ Architecture & Technology Stack
+## ⚠️ Known Limitations
 
-- **UI & Framework**: React 19, Vite, Tailwind CSS v4, Lucide Icons.
-- **Offline PWA Engine**: `vite-plugin-pwa` with Workbox Service Worker caching.
-- **Speech Technologies**: Web Speech API (`SpeechRecognition` & `SpeechSynthesis`) with fallback simulation.
-- **Local Storage**: IndexedDB via `dexie` for zero-leak local meeting logs.
-- **Summarization**: Offline NLP conversational extractor generating bilingual structured meeting notes.
+- Web Speech API behavior differs across browsers (Chrome/Edge are best, Firefox has no support, iOS Safari is limited). Continuous recognition can stop silently on some devices.
+- The free-tier backend can take time to "warm up" after sleeping, and free AI provider quotas can be rate-limited.
+- The usage quota is stored **in server memory**, so it resets on every restart and is not tied to a real account.
+- The server CORS policy is currently permissive (marked as temporary in `server.js`).
+- No automated tests yet.
+
+## 🗺️ Roadmap
+- [ ] Publish a signed Android APK (or Play Store build) and update the install dialog.
+- [ ] Write a privacy policy and show clearly in-app which mode sends data where.
+- [ ] Persistent usage limits (accounts or a database).
+- [ ] Tighten CORS and add rate limiting.
+- [ ] Add tests for the translation chain and dialect normalizers.
+- [ ] Pick a focused audience, e.g. NGOs and medical missions or specific language pairs (see the project's market notes).
 
 ---
 
 ## 🚀 Running Locally
 
 ```bash
-# Clone the repository
 git clone https://github.com/yzes95/translation-app.git
-
-# Navigate into the project
 cd translation-app
 
-# Install dependencies
+# Frontend
 npm install
+npm run dev        # dev server
+npm run build      # production build with PWA service worker
 
-# Start local development server
-npm run dev
-
-# Build production bundle with PWA Service Worker
-npm run build
+# Backend (optional, needed for Smart mode, lecture notes and tips)
+cd server
+cp .env.example .env   # add GEMINI_API_KEY, etc. (Groq / Cloudflare / Stripe keys are optional)
+npm install
+npm start
 ```
 
 ---
 
 ## 📄 License
-MIT License. Built with ❤️ for inclusive global communication.
+MIT License. Built for inclusive global communication.
